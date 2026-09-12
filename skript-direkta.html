@@ -152,6 +152,10 @@
   }
   .chip[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
   .chip-empty{border-style:dashed;color:var(--muted)}
+  .slots-inline{
+    background:var(--accent-soft);border-radius:10px;padding:12px 14px;gap:6px;
+  }
+  .slots-inline .row span:last-child{color:var(--ink)}
   .subj-caption{
     font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;
     color:var(--muted);margin-top:4px;
@@ -460,6 +464,7 @@
     },
 
     offer:{
+      slots:true,
       status:"ответил",
       stage:"Шаг 2",
       title:"Предложение",
@@ -501,6 +506,7 @@
     },
 
     book:{
+      slots:true,
       status:"пробное назначено",
       stage:"Шаг 3",
       title:"Записываем на диагностику",
@@ -544,6 +550,7 @@
     },
 
     move:{
+      slots:true,
       status:"пробное назначено",
       stage:"Шаг 3",
       title:"Перенос",
@@ -553,6 +560,7 @@
     },
 
     noShow:{
+      slots:true,
       status:"пробное назначено",
       stage:"Шаг 3",
       title:"Не пришёл на диагностику",
@@ -645,6 +653,7 @@
     },
 
     waitSchedule:{
+      slots:true,
       status:"ответил",
       stage:"Возражение",
       title:"«Ждём расписание школы или секции»",
@@ -718,6 +727,7 @@
     },
 
     rem1:{
+      slots:true,
       status:"ответил",
       stage:"Напоминание 1",
       title:"Через сутки: новые слоты",
@@ -727,6 +737,7 @@
     },
 
     rem2:{
+      slots:true,
       status:"ответил",
       stage:"Напоминание 2",
       title:"Через три дня: показываем контроль",
@@ -861,6 +872,32 @@
       var p = document.createElement("p"); p.className = "hint"; p.textContent = val(n.hint); head.appendChild(p);
     }
     step.appendChild(head);
+
+    if(n.slots){
+      var sw = document.createElement("div");
+      sw.className = "branch";
+      var sl = document.createElement("div");
+      sl.className = "branch-label";
+      sl.textContent = "Свободные окна для пробного";
+      sw.appendChild(sl);
+      var sr = document.createElement("div");
+      sr.className = "rows slots-inline";
+      if(!TRIAL.length){
+        var e = document.createElement("div");
+        e.className = "row"; e.textContent = "Окон нет - поставьте их в календарь";
+        sr.appendChild(e);
+      }
+      TRIAL.forEach(function(t){
+        var row = document.createElement("div");
+        row.className = "row";
+        var a = document.createElement("span"); a.textContent = t.day;
+        var b = document.createElement("span"); b.textContent = t.slots;
+        row.appendChild(a); row.appendChild(b);
+        sr.appendChild(row);
+      });
+      sw.appendChild(sr);
+      step.appendChild(sw);
+    }
 
     if(n.classPick){
       var pickWrap = document.createElement("div");
