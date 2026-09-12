@@ -1090,8 +1090,44 @@
     });
     var note = document.getElementById("dataNote");
     if(note){
-      note.textContent = "Данные от " + DATA_UPDATED + ". Перед тем как предложить слот, проверьте календарь: часть окон могла занятьcя.";
+      note.textContent = "Из " + DATA_UPDATED + ". Окна берутся из календаря «Окна для пробного»: удалили слот - он пропадёт и здесь.";
     }
+  }
+
+  // живые окна для пробного из публичного календаря «Окна для пробного»
+  var CAL_ID = "b43eb3d7776bfcea6809d656966accc9e36cc6cdcf0ea8b0c5b093a514086e67@group.calendar.google.com";
+  var CAL_KEY = "AIzaSyD5lIW-GkzisYTUVQEbi8iS2x7UiIk8SRs";
+  var TZ = "Europe/Minsk";
+
+  function loadCalendar(){
+    if(typeof fetch !== "function") return;
+    var now = new Date();
+    var till = new Date(now.getTime() + 14 * 24 * 3600 * 1000);
+    var url = "https://www.googleapis.com/calendar/v3/calendars/" + encodeURIComponent(CAL_ID) +
+      "/events?key=" + CAL_KEY + "&singleEvents=true&orderBy=startTime&maxResults=100" +
+      "&timeMin=" + encodeURIComponent(now.toISOString()) +
+      "&timeMax=" + encodeURIComponent(till.toISOString());
+    fetch(url).then(function(r){ return r.ok ? r.json() : Promise.reject(); }).then(function(data){
+      var items = (data.items || []).filter(function(e){ return e.start && e.start.dateTime; });
+      if(!items.length){
+        TRIAL = [{day:"Свободных окон нет", slots:"поставьте их в календарь"}];
+        DATA_UPDATED = "календаря, только что";
+        renderTrial();
+        return;
+      }
+      var byDay = {}, order = [];
+      items.forEach(function(e){
+        var d = new Date(e.start.dateTime);
+        var key = d.toLocaleDateString("ru-RU", {weekday:"short", day:"numeric", month:"long", timeZone:TZ});
+        if(!byDay[key]){ byDay[key] = []; order.push(key); }
+        byDay[key].push(d.toLocaleTimeString("ru-RU", {hour:"2-digit", minute:"2-digit", timeZone:TZ}));
+      });
+      TRIAL = order.map(function(k){
+        return {day: k.charAt(0).toUpperCase() + k.slice(1), slots: byDay[k].join(", ")};
+      });
+      DATA_UPDATED = "календаря, " + new Date().toLocaleTimeString("ru-RU", {hour:"2-digit", minute:"2-digit", timeZone:TZ});
+      renderTrial();
+    }).catch(function(){});
   }
 
   // данные лежат рядом со страницей: skript-data.json.
@@ -1114,5 +1150,6 @@
   renderChips();
   render();
   loadData();
+  loadCalendar();
 })();
 </script>
