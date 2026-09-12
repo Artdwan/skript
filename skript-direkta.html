@@ -215,14 +215,6 @@
 
     <aside>
       <div class="panel">
-        <h3>Класс и предмет</h3>
-        <div class="picker">
-          <div class="chips" id="chips"></div>
-          <p id="classline"></p>
-        </div>
-      </div>
-
-      <div class="panel">
         <h3>Расписание групп</h3>
         <div id="schedView" class="rows"></div>
         <div id="schedEditor" hidden></div>
@@ -1017,12 +1009,14 @@
 
   function renderChips(){
     var wrap = document.getElementById("chips");
+    if(!wrap) return;
     wrap.innerHTML = "";
     buildClassChips(wrap, function(key){
       current = key; groupIndex = 0;
       renderChips(); render();
     }, true);
     var line = document.getElementById("classline");
+    if(!line) return;
     var k = c();
     line.textContent = k.empty
       ? "Для этой группы условий в справочнике нет - цену и расписание не называем, спрашиваем Артура."
