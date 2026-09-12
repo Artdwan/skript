@@ -1,0 +1,1118 @@
+<title>Скрипт Директа АртТич</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Commissioner:wght@500;600;700&family=Golos+Text:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+  :root{
+    --paper:#F6F6F2;
+    --card:#FFFFFF;
+    --ink:#151C17;
+    --muted:#5D6B60;
+    --line:#DDE3DA;
+    --accent:#2F6B4F;
+    --accent-ink:#FFFFFF;
+    --accent-soft:#E7F0E9;
+    --warn:#9A5B14;
+    --warn-soft:#FBEEDC;
+    --bubble:#F0F3EC;
+    --shadow:0 1px 2px rgba(21,28,23,.06), 0 8px 24px rgba(21,28,23,.05);
+    --radius:14px;
+    --sans:"Golos Text","Segoe UI",system-ui,sans-serif;
+    --display:"Commissioner","Golos Text",system-ui,sans-serif;
+    --mono:"JetBrains Mono",ui-monospace,"SFMono-Regular",Menlo,monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --paper:#11140F;
+      --card:#171B15;
+      --ink:#E9EEE6;
+      --muted:#9AA79C;
+      --line:#2A3128;
+      --accent:#74C08C;
+      --accent-ink:#10160F;
+      --accent-soft:#1D2A20;
+      --warn:#E2A961;
+      --warn-soft:#2B2114;
+      --bubble:#1E241C;
+      --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 26px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="dark"]{
+    --paper:#11140F;
+    --card:#171B15;
+    --ink:#E9EEE6;
+    --muted:#9AA79C;
+    --line:#2A3128;
+    --accent:#74C08C;
+    --accent-ink:#10160F;
+    --accent-soft:#1D2A20;
+    --warn:#E2A961;
+    --warn-soft:#2B2114;
+    --bubble:#1E241C;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 26px rgba(0,0,0,.35);
+  }
+
+  *{box-sizing:border-box}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:var(--sans);
+    font-size:16px;
+    line-height:1.5;
+    padding:0 20px;
+    padding-block:28px 56px;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1120px;margin:0 auto;display:grid;gap:28px}
+
+  header.top{display:grid;gap:10px}
+  .eyebrow{
+    font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--muted);
+  }
+  h1{
+    font-family:var(--display);font-weight:700;font-size:clamp(26px,4vw,36px);
+    line-height:1.1;margin:0;text-wrap:balance;letter-spacing:-.01em;
+  }
+  .lede{margin:0;color:var(--muted);max-width:62ch}
+
+  .layout{display:grid;gap:24px;grid-template-columns:1fr;align-items:start}
+  @media (min-width:900px){.layout{grid-template-columns:minmax(0,1fr) 320px}}
+
+  /* ——— шаг ——— */
+  .step{
+    background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
+    box-shadow:var(--shadow);padding:22px;display:grid;gap:18px;min-width:0;
+  }
+  .crumbs{display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:13px;color:var(--muted)}
+  .crumbs button{
+    font:inherit;color:var(--accent);background:none;border:0;padding:0;cursor:pointer;
+    text-decoration:underline;text-underline-offset:3px;
+  }
+  .step-head{display:grid;gap:8px}
+  .tags{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+  .tag{
+    font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;
+    padding:4px 8px;border-radius:999px;border:1px solid var(--line);color:var(--muted);
+  }
+  .tag.status{background:var(--accent-soft);color:var(--accent);border-color:transparent}
+  .tag-btn{background:none;cursor:pointer;color:var(--accent);border-color:var(--accent)}
+  .tag-btn:hover{background:var(--accent-soft)}
+  h2{font-family:var(--display);font-weight:600;font-size:22px;margin:0;line-height:1.2;text-wrap:balance}
+  .hint{margin:0;color:var(--muted);font-size:15px}
+  .hint strong{color:var(--ink);font-weight:600}
+
+  /* ——— сообщение ——— */
+  .msgs{display:grid;gap:12px}
+  .msg{
+    background:var(--bubble);border-radius:4px 14px 14px 14px;padding:14px 16px;
+    display:grid;gap:10px;position:relative;
+  }
+  .msg pre{
+    margin:0;font-family:var(--sans);font-size:15px;line-height:1.55;white-space:pre-wrap;
+    word-break:break-word;
+  }
+  .msg .ph{
+    background:var(--warn-soft);color:var(--warn);border-radius:5px;padding:0 4px;
+    font-family:var(--mono);font-size:13px;
+  }
+  .msg-foot{display:flex;justify-content:space-between;align-items:center;gap:12px}
+  .msg-num{font-family:var(--mono);font-size:11px;color:var(--muted);letter-spacing:.08em}
+  .copy{
+    font:500 13px/1 var(--sans);background:var(--accent);color:var(--accent-ink);
+    border:0;border-radius:8px;padding:9px 14px;cursor:pointer;
+  }
+  .copy:hover{filter:brightness(1.06)}
+  .copy.done{background:var(--accent-soft);color:var(--accent)}
+
+  .note{
+    border-left:3px solid var(--warn);background:var(--warn-soft);color:var(--ink);
+    padding:10px 14px;border-radius:0 8px 8px 0;font-size:14px;
+  }
+
+  /* ——— ветки ——— */
+  .branch{display:grid;gap:10px}
+  .branch-label{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+  .opts{display:grid;gap:8px}
+  .opt{
+    text-align:left;font:500 15px/1.35 var(--sans);color:var(--ink);
+    background:var(--card);border:1px solid var(--line);border-radius:10px;
+    padding:12px 14px;cursor:pointer;display:flex;justify-content:space-between;gap:12px;align-items:center;
+  }
+  .opt:hover{border-color:var(--accent);background:var(--accent-soft)}
+  .opt .arrow{color:var(--accent);font-family:var(--mono);font-size:13px}
+  .opt.quiet{color:var(--muted)}
+
+  /* ——— класс ——— */
+  .picker{display:grid;gap:8px}
+  .chips{display:flex;flex-wrap:wrap;gap:8px}
+  .chip{
+    font:500 13px/1 var(--sans);padding:9px 12px;border-radius:999px;
+    border:1px solid var(--line);background:var(--card);color:var(--ink);cursor:pointer;
+  }
+  .chip[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+  .chip-empty{border-style:dashed;color:var(--muted)}
+  .subj-caption{
+    font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--muted);margin-top:4px;
+  }
+
+  /* ——— шпаргалка ——— */
+  aside{display:grid;gap:14px;min-width:0}
+  .panel{
+    background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
+    padding:16px 18px;display:grid;gap:10px;
+  }
+  .panel h3{
+    font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--muted);margin:0;font-weight:500;
+  }
+  .rows{display:grid;gap:6px;font-size:14px}
+  .row{display:flex;justify-content:space-between;gap:12px;align-items:baseline}
+  .row span:last-child{font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+  .row.dim span{color:var(--muted)}
+  .panel p{margin:0;font-size:14px;color:var(--muted)}
+  .panel ul{margin:0;padding-left:18px;font-size:14px;display:grid;gap:5px}
+  .panel li::marker{color:var(--accent)}
+  details summary{cursor:pointer;font-size:14px;color:var(--accent)}
+  .sched-actions{display:flex;flex-wrap:wrap;gap:8px}
+  .sched-row{display:grid;gap:4px;font-size:14px}
+  .sched-row .cls{font-weight:600}
+  .sched-row .val{color:var(--muted);font-size:13.5px;white-space:pre-line}
+  .sched-row .val.empty{color:var(--warn)}
+  #schedEditor{display:grid;gap:10px}
+  #schedEditor label{display:grid;gap:4px;font-size:13px;color:var(--muted)}
+  #schedEditor textarea{
+    font:400 14px/1.45 var(--sans);color:var(--ink);background:var(--paper);
+    border:1px solid var(--line);border-radius:8px;padding:8px 10px;resize:vertical;min-height:56px;width:100%;
+  }
+  .req{font-family:var(--mono);font-size:13px;line-height:1.6;word-break:break-word}
+
+  .toast{
+    position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(8px);
+    background:var(--ink);color:var(--paper);padding:10px 16px;border-radius:999px;
+    font-size:14px;opacity:0;pointer-events:none;transition:opacity .18s, transform .18s;
+    z-index:9;
+  }
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  @media (prefers-reduced-motion:reduce){.toast{transition:none}}
+  :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div class="eyebrow">АртТич · ответы в Instagram Direct</div>
+    <h1>Скрипт Директа</h1>
+    <p class="lede">Выберите, что написал клиент — получите готовый текст и следующий шаг. Цены и условия здесь те же, что в справочнике фактов: менять их в переписке нельзя.</p>
+  </header>
+
+  <div class="layout">
+    <main class="step" id="step" aria-live="polite"></main>
+
+    <aside>
+      <div class="panel">
+        <h3>Класс и предмет</h3>
+        <div class="picker">
+          <div class="chips" id="chips"></div>
+          <p id="classline"></p>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h3>Расписание групп</h3>
+        <div id="schedView" class="rows"></div>
+        <div id="schedEditor" hidden></div>
+        <div class="sched-actions">
+          <button type="button" class="chip" id="schedEdit">Изменить</button>
+          <button type="button" class="chip" id="schedSave" hidden>Сохранить</button>
+          <button type="button" class="chip" id="schedCancel" hidden>Отмена</button>
+          <button type="button" class="chip" id="schedReset" hidden>Вернуть из календаря</button>
+        </div>
+        <p id="schedNote">По одной группе в строке. Постоянные изменения вносятся в файл skript-data.json рядом со страницей; правка здесь сохраняется только в этом браузере.</p>
+      </div>
+
+      <div class="panel">
+        <h3>Окна для пробного</h3>
+        <div class="rows" id="trialRows"></div>
+        <p id="dataNote">Перед тем как предложить слот, проверьте календарь: часть окон могла занятьcя.</p>
+      </div>
+
+      <div class="panel">
+        <h3>Абонемент за месяц</h3>
+        <div class="rows">
+          <div class="row"><span>Математика 6, 7</span><span>210 / 105</span></div>
+          <div class="row"><span>Математика 8, 9, 10</span><span>260 / 130</span></div>
+          <div class="row"><span>Математика 11, ЦТ</span><span>300 / 150</span></div>
+          <div class="row"><span>Химия 7</span><span>105 / 52,50</span></div>
+          <div class="row"><span>Химия 8, 9, 10</span><span>130 / 65</span></div>
+          <div class="row dim"><span>Математика 5, химия 11</span><span>нет данных</span></div>
+        </div>
+        <p>Вторая цифра — первый абонемент со скидкой 50%. Индивидуальные: 45 BYN за 45 минут, 60 BYN за 60 минут, скидка 50% на них не действует.</p>
+      </div>
+
+      <div class="panel">
+        <h3>Скидки и добор</h3>
+        <ul>
+          <li>50% — новому ученику, только первый абонемент.</li>
+          <li>30% — при оплате трёх абонементов сразу.</li>
+          <li>Не складываются: три месяца для 8-10 класса — 130 + 182 + 182 = 494.</li>
+          <li>Пришёл в середине месяца: остаток этого месяца плюс весь следующий, всё со скидкой 50%.</li>
+        </ul>
+      </div>
+
+      <div class="panel">
+        <h3>Оплата</h3>
+        <p class="req">ЕРИП → Банки и НКФО → Альфа-Банк → пополнение по номеру +375 33 305-47-63</p>
+        <p>Новый ученик платит до первого занятия. Чек просить всегда: переводы приходят без имени ученика.</p>
+      </div>
+
+      <div class="panel">
+        <h3>Режим работы</h3>
+        <ul>
+          <li>Отвечаем 12:00-22:00, в течение часа.</li>
+          <li>Утром — все ночные сообщения и папка «Запросы».</li>
+          <li>Молчит: пишем через сутки, через три дня, через неделю. Дальше не пишем.</li>
+        </ul>
+      </div>
+
+      <div class="panel">
+        <h3>Спросить Артура, не отвечать самой</h3>
+        <ul>
+          <li>Просят индивидуальные занятия.</li>
+          <li>Математика 5 класса или химия 11 класса.</li>
+          <li>Любая цена или условие, которых нет в справочнике.</li>
+          <li>Расписание групп — только из файла учёта.</li>
+        </ul>
+      </div>
+
+      <div class="panel">
+        <details>
+          <summary>Чего не делать</summary>
+          <ul style="margin-top:10px">
+            <li>Не спрашивать «Подходит ли вам расписание?» и «Когда вам удобно?» — давать два конкретных слота.</li>
+            <li>Не отвечать вопросом на вопрос.</li>
+            <li>Не оставлять следующий шаг клиенту: называть день, когда напишем сами.</li>
+            <li>Не отвечать «укажите номер» вместо ответа по сути.</li>
+            <li>Не обещать баллов, предметов и групп, которых нет.</li>
+          </ul>
+        </details>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+(function(){
+  var M67 = {lo:8, hi:10, dur:45, times:"2 раза в неделю", extra:"алгебра и геометрия отдельными занятиями", price:210};
+  var M810 = {lo:8, hi:10, dur:60, times:"2 раза в неделю", extra:"алгебра и геометрия отдельно", price:260};
+  var M11 = {lo:12, hi:14, dur:60, times:"3 раза в неделю", extra:"два занятия по темам, третье - решение и разбор тестов ЦТ", price:300};
+  var H7 = {lo:4, hi:5, dur:45, times:"1 раз в неделю", extra:"", price:105};
+  var H810 = {lo:4, hi:5, dur:60, times:"1 раз в неделю", extra:"", price:130};
+
+  function mk(subj, cls, base, empty){
+    var o = {subj:subj, label:cls + " класс", full:cls + " класса", empty:!!empty};
+    if(base){ for(var k in base){ o[k] = base[k]; } }
+    return o;
+  }
+
+  var CLASSES = {
+    m5:  mk("Математика","5",  null, true),
+    m6:  mk("Математика","6",  M67),
+    m7:  mk("Математика","7",  M67),
+    m8:  mk("Математика","8",  M810),
+    m9:  mk("Математика","9",  M810),
+    m10: mk("Математика","10", M810),
+    m11: mk("Математика","11", M11),
+    h7:  mk("Химия","7",  H7),
+    h8:  mk("Химия","8",  H810),
+    h9:  mk("Химия","9",  H810),
+    h10: mk("Химия","10", H810),
+    h11: mk("Химия","11", null, true)
+  };
+  var current = "m8";
+  var groupIndex = 0;
+  var SCHED_KEY = "arttich-schedule-v2";
+  // расписание из календаря центра, неделя 7-13 сентября
+  var TRIAL = [
+    {day:"Понедельник", slots:"15:00, 16:00, 17:00, 18:00"},
+    {day:"Вт, ср, чт, пт", slots:"15:45"},
+    {day:"Суббота", slots:"13:15, 14:30, 20:15"},
+    {day:"Воскресенье", slots:"13:15"}
+  ];
+  var DATA_UPDATED = "неделя 7-13 сентября";
+  var DEFAULT_SCHED = {
+    m6:  "суббота и воскресенье в 15:45",
+    m7:  "суббота и воскресенье в 16:45 (суббота - алгебра, воскресенье - геометрия)",
+    m8:  "вторник в 17:00 и суббота в 17:45",
+    m9:  "вторник и четверг в 19:30\nсреда и пятница в 18:15\nчетверг в 17:00 и суббота в 19:00",
+    m10: "базовая: среда и пятница в 19:30\nпрофильная: вторник и четверг в 18:15",
+    m11: "вторник, четверг и пятница в 20:45",
+    h8:  "воскресенье в 17:45",
+    h9:  "воскресенье в 19:00",
+    h10: "воскресенье в 20:15"
+  };
+  var overrides = {};
+  try{ overrides = JSON.parse(localStorage.getItem(SCHED_KEY) || "{}") || {}; }catch(e){ overrides = {}; }
+
+  function schedRaw(key){
+    var k = key || current;
+    return Object.prototype.hasOwnProperty.call(overrides, k) ? overrides[k] : (DEFAULT_SCHED[k] || "");
+  }
+  function schedLines(key){
+    var raw = schedRaw(key);
+    if(!raw) return [];
+    return String(raw).split("\n").map(function(s){ return s.trim(); }).filter(Boolean);
+  }
+  function schedBlock(){
+    var a = schedLines();
+    if(!a.length) return "- <дни и время>";
+    return a.map(function(s){ return "- " + s; }).join("\n");
+  }
+  function numWord(n){
+    return {2:"два",3:"три",4:"четыре",5:"пять"}[n] || String(n);
+  }
+  function schedOne(){
+    var a = schedLines();
+    if(!a.length) return "<дни и время>";
+    return a[Math.min(groupIndex, a.length - 1)];
+  }
+
+  function num(n){
+    var s = (Math.round(n*100)/100).toFixed(2).replace(".", ",");
+    return s.replace(/,00$/, "");
+  }
+  function c(){ return CLASSES[current]; }
+  function half(){ return num(c().price/2); }
+  function perLesson(){
+    var k = c();
+    return num(k.price/k.hi) + "-" + num(k.price/k.lo);
+  }
+  function perLessonHalf(){
+    var k = c();
+    return num(k.price/k.hi/2) + "-" + num(k.price/k.lo/2);
+  }
+  function subject(){ return current.charAt(0) === "h" ? "химии" : "математике"; }
+
+  function offerLines(){
+    var k = c();
+    var l = ["- " + k.times + " по " + k.dur + " минут"];
+    if(k.extra) l.push("- " + k.extra);
+    l.push("- до 7 учеников");
+    var a = schedLines();
+    if(a.length > 1){
+      return l.join("\n") + "\n\nЕсть " + numWord(a.length) + " варианта расписания:\n" + a.map(function(s){ return "- " + s; }).join("\n");
+    }
+    l.push(a.length ? "- " + a[0] : "- <дни и время>");
+    return l.join("\n");
+  }
+
+  var NODES = {
+    start:{
+      status:"новый",
+      stage:"Начало",
+      title:"С чего начинается переписка?",
+      hint:"Отвечаем в течение часа. Если сообщение пришло ночью — первым делом утром.",
+      next:[
+        {t:"Написал «РЕПЕТИТОР» или просто поздоровался", to:"first"},
+        {t:"Сразу назвал класс и предмет", to:"chooseClass"},
+        {t:"Спрашивает цену, класс не назвал", to:"priceFirst"},
+        {t:"Писал нам раньше, в переписке есть история", to:"back2"},
+        {t:"Нужен другой предмет: русский, английский, физика", to:"otherSubject"},
+        {t:"«Вы в Беларуси?», «где находитесь?», «есть офлайн?»", to:"where"},
+        {t:"«15 рублей — это пробное?»", to:"fifteen"}
+      ]
+    },
+
+    first:{
+      status:"новый → ответил",
+      stage:"Шаг 1",
+      title:"Первый ответ",
+      hint:"Один вопрос — про класс. Отметку и цель спрашиваем позже, если понадобятся.",
+      msgs:[
+        "Здравствуйте! Вижу, вы написали по объявлению о занятиях по математике 📘\n\nПодскажите, в какой класс переходит ученик?"
+      ],
+      next:[
+        {t:"Назвал класс", to:"chooseClass"},
+        {t:"«А индивидуально можно?»", to:"individual"},
+        {t:"Молчит сутки", to:"rem1"}
+      ]
+    },
+
+    chooseClass:{
+      status:"ответил",
+      stage:"Шаг 2",
+      title:"Какой класс и предмет назвал клиент?",
+      hint:"Выберите — дальше откроется готовое предложение с ценой и расписанием этой группы.",
+      classPick:true
+    },
+
+    priceFirst:{
+      status:"ответил",
+      stage:"Шаг 1",
+      title:"Спрашивает цену, но класс неизвестен",
+      hint:"Отвечаем по существу и тем же сообщением спрашиваем класс. Без класса точную сумму не назвать.",
+      msgs:[
+        "Здравствуйте!\n\nГрупповые занятия онлайн, до 7 учеников. Первое диагностическое занятие бесплатное.\n\nСтоимость зависит от класса. Подскажите, в каком классе учится ребёнок - пришлю точную сумму и расписание."
+      ],
+      next:[{t:"Назвал класс", to:"chooseClass"}]
+    },
+
+    offer:{
+      status:"ответил",
+      stage:"Шаг 2",
+      title:"Предложение",
+      hint:"Три коротких сообщения подряд: группа, цена, диагностика. Выберите класс слева — цифры подставятся сами.",
+      picker:true,
+      msgs:function(){
+        var k = c();
+        if(k.empty) return [];
+        return [
+          "Для " + k.full + " есть группа по " + subject() + ".\n\n" + offerLines(),
+          "Месяц - " + k.price + " рублей, это " + k.lo + "-" + k.hi + " занятий.\nПервый абонемент со скидкой 50% - " + half() + " рублей.",
+          "Начнём с бесплатной диагностики на 30-40 минут: посмотрю уровень и скажу, с чего начинать.\n\nУдобно в <день> в <время> или в <день> в <время>?"
+        ];
+      },
+      note:function(){
+        if(c().empty) return "Для 5 класса по математике и 11 класса по химии условий в справочнике нет. Не называть цену и расписание — написать Артуру и ответить клиенту после его ответа.";
+        return "Расписание берём из файла учёта. Один из слотов диагностики — утро или выходной: у детей со второй сменой будни после обеда заняты.";
+      },
+      next:[
+        {t:"«Да, записывайте на диагностику»", to:"book"},
+        {t:"«Дорого»", to:"expensive"},
+        {t:"«Подумаем»", to:"think"},
+        {t:"«Не подходит время», вторая смена", to:"time"},
+        {t:"«Ждём расписание школы, секции, факультатива»", to:"waitSchedule"},
+        {t:"«Раньше занимались, результата не было»", to:"noHelp"},
+        {t:"«Сколько человек в группе?»", to:"groupSize"},
+        {t:"«Хотим индивидуально»", to:"individual"},
+        {t:"Прочитал и молчит", to:"rem1"},
+        {t:"Отказался", to:"refuse", quiet:true}
+      ]
+    },
+
+    groupSize:{
+      status:"ответил",
+      stage:"Шаг 2",
+      title:"«Сколько человек в группе?»",
+      msgs:["В группе до 7 учеников - я вижу каждого и успеваю подойти.\n\nРабота над пробелами и разбор ошибок входят в абонемент.\n\nЗапишу на бесплатную диагностику? Удобно в <день> в <время> или в <день> в <время>?"],
+      next:[{t:"Согласился на диагностику", to:"book"},{t:"«Подумаем»", to:"think"}]
+    },
+
+    book:{
+      status:"пробное назначено",
+      stage:"Шаг 3",
+      title:"Записываем на диагностику",
+      hint:"В подтверждении всегда день недели, дата и время. День недели сверяем по календарю.",
+      msgs:["Записал: <день недели>, <дата>, в <время>.\n\nСсылку пришлю за 15 минут до начала.\nЕсли продублировать её в Viber или Telegram - напишите номер или ник.\n\nЕсли планы поменяются - напишите, перенесём."],
+      next:[
+        {t:"Накануне занятия", to:"remindEve"},
+        {t:"За 15 минут до начала", to:"link"},
+        {t:"Просит перенести", to:"move"},
+        {t:"Не пришёл и не предупредил", to:"noShow"}
+      ]
+    },
+
+    remindEve:{
+      status:"пробное назначено",
+      stage:"Шаг 3",
+      title:"Напоминание накануне",
+      hint:"Без этого напоминания пробные срываются чаще всего.",
+      msgs:["<Имя>, добрый вечер!\n\nНапоминаю: завтра, <день недели> <дата>, в <время> - диагностика по <предмет>.\n\nВсё в силе?"],
+      next:[{t:"Подтвердил", to:"link"},{t:"Просит перенести", to:"move"}]
+    },
+
+    link:{
+      status:"пробное назначено",
+      stage:"Шаг 3",
+      title:"Ссылка за 15 минут",
+      hint:"В первые минуты следим за запросами на вход: родитель без аккаунта может ждать, пока его впустят.",
+      msgs:["Через 15 минут начинаем.\n\nСсылка: <ссылка>"],
+      next:[
+        {t:"Не подключился через 5 минут", to:"late"},
+        {t:"Диагностика прошла", to:"after"}
+      ]
+    },
+
+    late:{
+      status:"пробное назначено",
+      stage:"Шаг 3",
+      title:"Занятие началось, клиента нет",
+      msgs:["<Имя>, занятие уже началось. Получится подключиться?"],
+      next:[{t:"Подключился", to:"after"},{t:"Так и не пришёл", to:"noShow"}]
+    },
+
+    move:{
+      status:"пробное назначено",
+      stage:"Шаг 3",
+      title:"Перенос",
+      hint:"Новые слоты — в том же сообщении. Пауза на сутки здесь уже стоила нам клиентов.",
+      msgs:["Хорошо, перенесём.\n\nМогу <день> в <время> или <день> в <время>. Как удобнее?"],
+      next:[{t:"Выбрал время", to:"book"}]
+    },
+
+    noShow:{
+      status:"пробное назначено",
+      stage:"Шаг 3",
+      title:"Не пришёл на диагностику",
+      hint:"Пишем на следующий день. Если человек не пришёл больше двух раз — такого ученика не берём.",
+      msgs:["<Имя>, добрый день!\n\nВчера не получилось встретиться на диагностике.\n\nМогу предложить <день> в <время> или <день> в <время>.\nЕсли сейчас не до этого - напишите, беспокоить не буду."],
+      next:[{t:"Выбрал новое время", to:"book"},{t:"Молчит", to:"rem1"}]
+    },
+
+    after:{
+      status:"пробное состоялось",
+      stage:"Шаг 4",
+      title:"После диагностики",
+      groupPick:true,
+      hint:"Пишем в тот же день, не дожидаясь вопроса. Родители спрашивают одно и то же: как прошло, сколько стоит, что дальше — отвечаем на всё сразу. Просьба «оставьте номер» вместо этого текста не годится.",
+      msgs:function(){
+        var k = c();
+        var sum = k.empty ? "<сумма>" : half();
+        return [
+          "<Имя>, спасибо, что пришли!\n\nЧто увидел: <2-3 наблюдения: что получается, где пробелы>.\n\nПредлагаю группу " + schedOne() + ". Ближайшее занятие - <день недели, дата>.",
+          "Первый абонемент со скидкой 50% - " + sum + " рублей: <что входит>.\n\nОплата через ЕРИП:\n- Банки и НКФО\n- Альфа-Банк\n- пополнение по номеру +375 33 305-47-63\n\nПосле оплаты пришлите, пожалуйста, чек - и я добавлю <имя ученика> в группу."
+        ];
+      },
+      note:"Если старт в середине месяца, сумма считается по правилу добора: оставшиеся занятия этого месяца плюс весь следующий, всё со скидкой 50%. В строке «что входит» так и пишем: «оставшиеся 3 занятия сентября и весь октябрь».",
+      next:[
+        {t:"Оплатил", to:"paid"},
+        {t:"«Подумаем»", to:"think"},
+        {t:"«Дорого»", to:"expensive"},
+        {t:"Молчит", to:"rem1"}
+      ]
+    },
+
+    paid:{
+      status:"оплатил",
+      stage:"Шаг 5",
+      title:"Оплата получена",
+      groupPick:true,
+      msgs:function(){
+        return ["Оплату получил, спасибо!\n\n<Имя ученика> в группе " + schedOne() + ".\nПервое занятие - <день недели, дата>, в <время>.\n\nСсылку пришлю за 15 минут до начала."];
+      },
+      next:[{t:"Вернуться к началу", to:"start"}]
+    },
+
+    expensive:{
+      status:"ответил",
+      stage:"Возражение",
+      title:"«Дорого»",
+      usesClass:true,
+      msgs:function(){
+        var k = c();
+        if(k.empty) return [];
+        return ["Понимаю - сумма заметная.\n\n" + k.price + " рублей это месяц занятий: " + k.lo + "-" + k.hi + " занятий по " + k.dur + " минут.\nВыходит примерно " + perLesson() + " рублей за занятие.\n\nВ стоимость входит проверка домашних заданий, разбор ошибок и работа над пробелами - не только само занятие.\n\nДля новых учеников сейчас скидка 50% на первый абонемент - получается " + half() + " рублей, около " + perLessonHalf() + " рублей за занятие.\n\nМогу записать на бесплатную диагностику. Посмотрите, как проходит занятие, и решите."];
+      },
+      next:[
+        {t:"Согласился на диагностику", to:"book"},
+        {t:"«Понятно, спасибо за информацию»", to:"silentPrice"},
+        {t:"«Подумаем»", to:"think"}
+      ]
+    },
+
+    silentPrice:{
+      status:"ответил",
+      stage:"Возражение",
+      title:"Ответил сухо после цены",
+      hint:"«Понятно, спасибо» после цены — это чаще всего «дорого», просто не вслух. Спрашиваем прямо.",
+      msgs:["Понимаю, сумма заметная.\n\nПодскажите, что смущает - цена или что-то другое? Спрашиваю, чтобы предложить подходящий вариант."],
+      next:[{t:"Ответил про цену", to:"expensive"},{t:"Ответил про время", to:"time"},{t:"Молчит", to:"rem1"}]
+    },
+
+    think:{
+      status:"ответил",
+      stage:"Возражение",
+      title:"«Подумаем»",
+      hint:"Главное — не оставлять следующий шаг клиенту. Назначаем день, когда напишем сами, и пишем.",
+      msgs:[
+        "Конечно, подумайте.\n\nСкажу только про сроки: группа стартует <дата>, сейчас занято <N> из 7 мест.\n\nМогу пока записать на диагностику - она ни к чему не обязывает.\n\nЕсли не ответите раньше, напишу вам <день>.",
+        "Конечно.\n\nДиагностика ни к чему не обязывает - после неё я прямо скажу, нужна ли группа и какая.\n\nНапишу вам в <день>. Если решите раньше - пишите."
+      ],
+      note:"Первый текст — когда группа ещё не стартовала. Второй — когда занятия уже идут.",
+      next:[{t:"Согласился на диагностику", to:"book"},{t:"Молчит", to:"rem1"}]
+    },
+
+    time:{
+      status:"ответил",
+      stage:"Возражение",
+      title:"«Не подходит время», вторая смена",
+      hint:"Это самая частая причина отказа. Не закрываем разговор: спрашиваем удобное время и записываем в лист ожидания.",
+      msgs:["Понял. А какое время было бы удобно?\n\nЗапишу вас в лист ожидания: если наберётся группа в это время, напишу первым."],
+      note:"Если в расписании есть подходящий день в другой группе того же класса — предложить его. Алгебра и геометрия идут разными днями, поэтому иногда складывается.",
+      next:[{t:"Назвал удобное время", to:"offer"},{t:"Отказался", to:"refuse"}]
+    },
+
+    waitSchedule:{
+      status:"ответил",
+      stage:"Возражение",
+      title:"«Ждём расписание школы или секции»",
+      hint:"Сентябрьская классика. Разводим два решения: диагностику можно сейчас, группу — потом.",
+      msgs:["Понимаю, в сентябре у всех так.\n\nДиагностику можно пройти уже сейчас - она ни к чему не привязывает, а группу выберем, когда будет понятно расписание.\n\nУдобно в <день> в <время> или в <день> в <время>?"],
+      note:"Если диагностику сейчас не хотят — пишем «Хорошо, напишу вам <день>» и обязательно пишем в этот день.",
+      next:[{t:"Согласился на диагностику", to:"book"},{t:"«Напишем сами»", to:"think"}]
+    },
+
+    noHelp:{
+      status:"ответил",
+      stage:"Возражение",
+      title:"«Раньше занимались, не помогло»",
+      hint:"Отвечаем не уговорами, а тем, как устроен контроль. К сообщению приложить 1-2 скрина онлайн-тетради.",
+      msgs:["Понимаю. Без регулярного контроля даже индивидуальные занятия могут не дать результата.\n\nУ нас домашние задания - в онлайн-тетради: теория и задания по теме, часть ответов проверяется сразу, полное решение ученик пишет от руки и присылает фото.\n\nЯ вижу ошибки каждого и возвращаюсь к этим темам, пока они не уходят.\n\nНачнём с диагностики - определю пробелы и составлю план."],
+      next:[{t:"Согласился на диагностику", to:"book"},{t:"«Подумаем»", to:"think"}]
+    },
+
+    individual:{
+      status:"ответил",
+      stage:"Особый случай",
+      title:"«Хотим индивидуально»",
+      hint:"Сами индивидуальные не предлагаем. Если клиент просит — сначала пишем Артуру и только потом отвечаем. Пока решения нет, мягко ведём в группу.",
+      msgs:["Если задача подтянуть, закрыть пробелы или подготовиться к экзамену - группа до 7 человек справляется не хуже.\n\nЯ вижу каждого и успеваю подойти.\n\nМесяц при этом выходит заметно дешевле.\n\nПредлагаю начать с диагностики - посмотрите, как пойдёт."],
+      next:[{t:"Согласился посмотреть группу", to:"offer"},{t:"Настаивает на индивидуальных", to:"askArtur"}]
+    },
+
+    askArtur:{
+      status:"ответил",
+      stage:"Особый случай",
+      title:"Настаивает на индивидуальных",
+      hint:"Не отвечаем сами. Пишем Артуру: класс, предмет, цель, удобное время. Клиенту — короткое сообщение, чтобы он не ждал в тишине.",
+      msgs:["Уточню по свободным окнам и вернусь с ответом сегодня до <время>."],
+      next:[{t:"Вернуться к началу", to:"start"}]
+    },
+
+    otherSubject:{
+      status:"отказ",
+      stage:"Особый случай",
+      title:"Нужен другой предмет",
+      hint:"Отказ — коротко и с одной причиной. Никаких «может быть потом».",
+      msgs:["<Предмет> мы не ведём - только математику и химию.\n\nЕсли нужна математика или химия - пришлю расписание и стоимость."],
+      next:[{t:"Оказалось, нужна математика или химия", to:"chooseClass"},{t:"Вернуться к началу", to:"start"}]
+    },
+
+    where:{
+      status:"ответил",
+      stage:"Частый вопрос",
+      title:"«Где вы находитесь? Есть офлайн?»",
+      msgs:["Мы из Беларуси, занятия проходят онлайн - ученик занимается из дома, по ссылке.\n\nОфлайн-занятий нет. Если онлайн в принципе рассматриваете - начнём с бесплатной диагностики, заодно проверите, как это работает.\n\nЕсли офлайн принципиален - так и скажите, не буду занимать ваше время."],
+      next:[{t:"Готов попробовать онлайн", to:"chooseClass"},{t:"Нужен только офлайн", to:"refuse"}]
+    },
+
+    fifteen:{
+      status:"новый",
+      stage:"Частый вопрос",
+      title:"«15 рублей — это пробное?»",
+      hint:"Начинаем с хорошей новости: пробное бесплатное. И сразу спрашиваем класс, чтобы назвать точную сумму.",
+      msgs:["Пробное бесплатное.\n\n15 рублей в объявлении - примерная цена одного занятия в первом месяце, со скидкой 50%.\n\nПодскажите, в каком классе учится ребёнок - пришлю точную сумму и расписание."],
+      next:[{t:"Назвал класс", to:"chooseClass"}]
+    },
+
+    back2:{
+      status:"новый",
+      stage:"Особый случай",
+      title:"Писал нам раньше",
+      hint:"Начинаем с истории, а не с «в каком классе». За год ребёнок перешёл в следующий класс — так и спрашиваем.",
+      msgs:["<Имя>, добрый день!\n\nВы писали нам <когда> про <предмет>, тогда <класс> класс.\nСейчас, получается, <класс + 1>-й?"],
+      note:"Если в прошлый раз что-то не подошло — офлайн, другой предмет, время — вторым сообщением честно скажите, что изменилось или что этого по-прежнему нет.",
+      next:[{t:"Ответил про класс", to:"chooseClass"},{t:"Молчит", to:"rem1"}]
+    },
+
+    rem1:{
+      status:"ответил",
+      stage:"Напоминание 1",
+      title:"Через сутки: новые слоты",
+      hint:"Напоминание всегда несёт что-то новое. «Ну как, надумали?» не пишем никогда.",
+      msgs:["<Имя>, добрый день!\n\nНа этой неделе есть два свободных окна для диагностики: <день> в <время> и <день> в <время>.\n\nКакое удобнее?"],
+      next:[{t:"Ответил", to:"offer"},{t:"Молчит ещё три дня", to:"rem2"}]
+    },
+
+    rem2:{
+      status:"ответил",
+      stage:"Напоминание 2",
+      title:"Через три дня: показываем контроль",
+      hint:"Приложить 1-2 скрина онлайн-тетради — это то, чего нет у большинства репетиторов.",
+      msgs:["<Имя>, добрый день!\n\nПокажу, как устроены домашние задания - за счёт них и подтягивается отметка.\n\nУченик решает в онлайн-тетради, часть ответов проверяется сразу, полное решение присылает фото. Я вижу каждую ошибку и возвращаюсь к этим темам на занятии.\n\nДиагностика бесплатная - <день> в <время> свободно."],
+      next:[{t:"Ответил", to:"offer"},{t:"Молчит ещё неделю", to:"rem3"}]
+    },
+
+    rem3:{
+      status:"ответил → молчит",
+      stage:"Напоминание 3",
+      title:"Через неделю: последнее",
+      hint:"После этого сообщения ставим статус «молчит» и больше не пишем.",
+      msgs:["<Имя>, последний раз напомню о себе.\n\nЕсли занятия сейчас не актуальны - ничего страшного.\nКогда понадобится - пишите, подберём место в группе."],
+      next:[{t:"Вернуться к началу", to:"start"}]
+    },
+
+    restart:{
+      status:"молчит",
+      stage:"Возврат",
+      title:"Писал до старта занятий, группы уже идут",
+      hint:"Для тех, кто прочитал предложение в августе и пропал. Повод написать — новая информация, а не «напоминаю о себе».",
+      msgs:["Добрый день!\n\nВы писали нам <когда> про занятия по <предмет>.\n\nГруппы уже начались, но присоединиться ещё можно.\n\nСкидка 50% на первый абонемент сохраняется: оплачиваете оставшиеся занятия <месяца> и весь <следующий месяц>.\n\nНачнём с бесплатной диагностики.\nУдобно в <день> в <время> или в <день> в <время>?"],
+      next:[{t:"Ответил", to:"offer"},{t:"Вернуться к началу", to:"start"}]
+    },
+
+    refuse:{
+      status:"отказ",
+      stage:"Отказ",
+      title:"Клиент отказался",
+      hint:"Спрашиваем причину одной фразой — это данные для расписания и цен. Дверь оставляем открытой, но без уговоров.",
+      msgs:["Спасибо, что написали!\n\nЕсли не сложно - что именно не подошло? Спрашиваю, чтобы учесть."],
+      next:[
+        {t:"Ответил, что не подошло время", to:"time"},
+        {t:"Ответил, что дорого", to:"expensive"},
+        {t:"Вернуться к началу", to:"start"}
+      ]
+    }
+  };
+
+  // дополнительный вход в возврат старых лидов
+  NODES.start.next.push({t:"Старый лид: писал до сентября и пропал", to:"restart", quiet:true});
+
+  var path = ["start"];
+
+  function esc(s){
+    return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  }
+  function markPlaceholders(s){
+    return esc(s).replace(/&lt;([^&]+?)&gt;/g, '<span class="ph">&lt;$1&gt;</span>');
+  }
+  function val(v){ return typeof v === "function" ? v() : v; }
+
+  var toastEl = document.getElementById("toast");
+  var toastTimer;
+  function toast(text){
+    toastEl.textContent = text;
+    toastEl.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function(){ toastEl.classList.remove("show"); }, 1600);
+  }
+
+  function copy(text, btn){
+    function done(){
+      btn.textContent = "Скопировано";
+      btn.classList.add("done");
+      toast("Текст скопирован");
+      setTimeout(function(){ btn.textContent = "Копировать"; btn.classList.remove("done"); }, 1800);
+    }
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(text).then(done, function(){ fallback(text, done); });
+    } else { fallback(text, done); }
+  }
+  function fallback(text, done){
+    var ta = document.createElement("textarea");
+    ta.value = text; ta.setAttribute("readonly","");
+    ta.style.position = "fixed"; ta.style.opacity = "0";
+    document.body.appendChild(ta); ta.select();
+    try{ document.execCommand("copy"); done(); }catch(e){ toast("Скопируйте текст вручную"); }
+    document.body.removeChild(ta);
+  }
+
+  function render(){
+    var id = path[path.length-1];
+    var n = NODES[id];
+    var step = document.getElementById("step");
+    step.innerHTML = "";
+
+    // хлебные крошки
+    if(path.length > 1){
+      var cr = document.createElement("nav");
+      cr.className = "crumbs";
+      var back = document.createElement("button");
+      back.type = "button";
+      back.textContent = "← Назад";
+      back.addEventListener("click", function(){ path.pop(); render(); });
+      var home = document.createElement("button");
+      home.type = "button";
+      home.textContent = "В начало";
+      home.addEventListener("click", function(){ path = ["start"]; render(); });
+      cr.appendChild(back);
+      var dot = document.createElement("span"); dot.textContent = "·"; cr.appendChild(dot);
+      cr.appendChild(home);
+      step.appendChild(cr);
+    }
+
+    var head = document.createElement("div");
+    head.className = "step-head";
+    var tags = document.createElement("div");
+    tags.className = "tags";
+    if(n.stage){
+      var t1 = document.createElement("span"); t1.className = "tag"; t1.textContent = n.stage; tags.appendChild(t1);
+    }
+    if(n.status){
+      var t2 = document.createElement("span"); t2.className = "tag status"; t2.textContent = "статус: " + n.status; tags.appendChild(t2);
+    }
+    if(n.usesClass){
+      var t3 = document.createElement("span");
+      t3.className = "tag";
+      t3.textContent = c().subj + ", " + c().label;
+      tags.appendChild(t3);
+      var swap = document.createElement("button");
+      swap.type = "button";
+      swap.className = "tag tag-btn";
+      swap.textContent = "сменить";
+      swap.addEventListener("click", function(){ path.push("chooseClass"); render(); });
+      tags.appendChild(swap);
+    }
+    head.appendChild(tags);
+    var h = document.createElement("h2"); h.textContent = n.title; head.appendChild(h);
+    if(n.hint){
+      var p = document.createElement("p"); p.className = "hint"; p.textContent = val(n.hint); head.appendChild(p);
+    }
+    step.appendChild(head);
+
+    if(n.classPick){
+      var pickWrap = document.createElement("div");
+      pickWrap.className = "branch";
+      buildClassChips(pickWrap, function(key){
+        current = key; groupIndex = 0;
+        renderChips();
+        path.push("offer");
+        render();
+      }, false);
+      step.appendChild(pickWrap);
+    }
+
+    if(n.groupPick && schedLines().length > 1){
+      var gWrap = document.createElement("div");
+      gWrap.className = "branch";
+      var gl = document.createElement("div");
+      gl.className = "branch-label";
+      gl.textContent = "В какую группу записываем";
+      gWrap.appendChild(gl);
+      var gchips = document.createElement("div");
+      gchips.className = "chips";
+      schedLines().forEach(function(line, i){
+        var b = document.createElement("button");
+        b.type = "button"; b.className = "chip";
+        b.textContent = line;
+        b.setAttribute("aria-pressed", i === groupIndex ? "true" : "false");
+        b.addEventListener("click", function(){ groupIndex = i; render(); });
+        gchips.appendChild(b);
+      });
+      gWrap.appendChild(gchips);
+      step.appendChild(gWrap);
+    }
+
+    var msgs = val(n.msgs) || [];
+    if(msgs.length){
+      var box = document.createElement("div");
+      box.className = "msgs";
+      msgs.forEach(function(text, i){
+        var m = document.createElement("div");
+        m.className = "msg";
+        var pre = document.createElement("pre");
+        pre.innerHTML = markPlaceholders(text);
+        m.appendChild(pre);
+        var foot = document.createElement("div");
+        foot.className = "msg-foot";
+        var num = document.createElement("span");
+        num.className = "msg-num";
+        num.textContent = msgs.length > 1 ? "СООБЩЕНИЕ " + (i+1) + " ИЗ " + msgs.length : "СООБЩЕНИЕ";
+        var btn = document.createElement("button");
+        btn.type = "button"; btn.className = "copy"; btn.textContent = "Копировать";
+        btn.addEventListener("click", function(){ copy(text, btn); });
+        foot.appendChild(num); foot.appendChild(btn);
+        m.appendChild(foot);
+        box.appendChild(m);
+      });
+      step.appendChild(box);
+    }
+
+    var note = val(n.note);
+    if(note){
+      var nb = document.createElement("div");
+      nb.className = "note";
+      nb.textContent = note;
+      step.appendChild(nb);
+    }
+
+    if(n.next && n.next.length){
+      var br = document.createElement("div");
+      br.className = "branch";
+      var lb = document.createElement("div");
+      lb.className = "branch-label";
+      lb.textContent = id === "start" ? "Выберите ситуацию" : "Что ответил клиент";
+      br.appendChild(lb);
+      var opts = document.createElement("div");
+      opts.className = "opts";
+      n.next.forEach(function(o){
+        var b = document.createElement("button");
+        b.type = "button";
+        b.className = "opt" + (o.quiet ? " quiet" : "");
+        var span = document.createElement("span"); span.textContent = o.t;
+        var ar = document.createElement("span"); ar.className = "arrow"; ar.textContent = "→";
+        b.appendChild(span); b.appendChild(ar);
+        b.addEventListener("click", function(){
+          if(o.to === "start"){ path = ["start"]; } else { path.push(o.to); }
+          render();
+          document.getElementById("step").scrollIntoView({block:"start", behavior:"smooth"});
+        });
+        opts.appendChild(b);
+      });
+      br.appendChild(opts);
+      step.appendChild(br);
+    }
+  }
+
+  function buildClassChips(container, onPick, markCurrent){
+    ["Математика","Химия"].forEach(function(subj){
+      var cap = document.createElement("div");
+      cap.className = "subj-caption";
+      cap.textContent = subj;
+      container.appendChild(cap);
+      var row = document.createElement("div");
+      row.className = "chips";
+      Object.keys(CLASSES).forEach(function(key){
+        if(CLASSES[key].subj !== subj) return;
+        var b = document.createElement("button");
+        b.type = "button";
+        b.className = "chip" + (CLASSES[key].empty ? " chip-empty" : "");
+        b.textContent = CLASSES[key].label;
+        b.setAttribute("aria-pressed", (markCurrent && key === current) ? "true" : "false");
+        b.addEventListener("click", function(){ onPick(key); });
+        row.appendChild(b);
+      });
+      container.appendChild(row);
+    });
+  }
+
+  function renderChips(){
+    var wrap = document.getElementById("chips");
+    wrap.innerHTML = "";
+    buildClassChips(wrap, function(key){
+      current = key; groupIndex = 0;
+      renderChips(); render();
+    }, true);
+    var line = document.getElementById("classline");
+    var k = c();
+    line.textContent = k.empty
+      ? "Для этой группы условий в справочнике нет - цену и расписание не называем, спрашиваем Артура."
+      : k.price + " рублей в месяц, " + k.lo + "-" + k.hi + " занятий по " + k.dur + " минут. Первый абонемент - " + half() + " рублей.";
+  }
+
+  // ——— расписание ———
+  var schedView = document.getElementById("schedView");
+  var schedEditor = document.getElementById("schedEditor");
+  var btnEdit = document.getElementById("schedEdit");
+  var btnSave = document.getElementById("schedSave");
+  var btnCancel = document.getElementById("schedCancel");
+
+  function renderSched(){
+    schedView.innerHTML = "";
+    ["Математика","Химия"].forEach(function(subj){
+      var cap = document.createElement("div");
+      cap.className = "subj-caption";
+      cap.textContent = subj;
+      schedView.appendChild(cap);
+      Object.keys(CLASSES).forEach(function(key){
+        var k = CLASSES[key];
+        if(k.subj !== subj || k.empty) return;
+        var row = document.createElement("div");
+        row.className = "sched-row";
+        var cls = document.createElement("div");
+        cls.className = "cls"; cls.textContent = k.label;
+        var val = document.createElement("div");
+        var lines = schedLines(key);
+        if(lines.length){ val.className = "val"; val.textContent = lines.join("\n"); }
+        else { val.className = "val empty"; val.textContent = "не заполнено"; }
+        row.appendChild(cls); row.appendChild(val);
+        schedView.appendChild(row);
+      });
+    });
+  }
+
+  function openEditor(){
+    schedEditor.innerHTML = "";
+    Object.keys(CLASSES).forEach(function(key){
+      if(CLASSES[key].empty) return;
+      var lab = document.createElement("label");
+      lab.setAttribute("for", "sched-" + key);
+      lab.appendChild(document.createTextNode(CLASSES[key].subj + ", " + CLASSES[key].label));
+      var ta = document.createElement("textarea");
+      ta.id = "sched-" + key;
+      ta.value = schedRaw(key);
+      ta.placeholder = "вторник и четверг в 17:00";
+      lab.appendChild(ta);
+      schedEditor.appendChild(lab);
+    });
+    schedEditor.hidden = false;
+    schedView.hidden = true;
+    btnEdit.hidden = true;
+    btnSave.hidden = false;
+    btnCancel.hidden = false;
+    btnReset.hidden = false;
+  }
+  function closeEditor(){
+    schedEditor.hidden = true;
+    schedView.hidden = false;
+    btnEdit.hidden = false;
+    btnSave.hidden = true;
+    btnCancel.hidden = true;
+    btnReset.hidden = true;
+  }
+  var btnReset = document.getElementById("schedReset");
+  btnEdit.addEventListener("click", openEditor);
+  btnCancel.addEventListener("click", closeEditor);
+  btnReset.addEventListener("click", function(){
+    overrides = {};
+    try{ localStorage.removeItem(SCHED_KEY); }catch(e){}
+    closeEditor(); renderSched(); render();
+    toast("Вернул расписание из календаря");
+  });
+  btnSave.addEventListener("click", function(){
+    Object.keys(CLASSES).forEach(function(key){
+      if(CLASSES[key].empty) return;
+      var ta = document.getElementById("sched-" + key);
+      if(!ta) return;
+      var v = ta.value.split("\n").map(function(s){ return s.trim(); }).filter(Boolean).join("\n");
+      if(v === (DEFAULT_SCHED[key] || "")) delete overrides[key]; else overrides[key] = v;
+    });
+    try{ localStorage.setItem(SCHED_KEY, JSON.stringify(overrides)); }catch(e){}
+    closeEditor();
+    renderSched();
+    render();
+    toast("Расписание сохранено");
+  });
+
+  function renderTrial(){
+    var box = document.getElementById("trialRows");
+    if(!box) return;
+    box.innerHTML = "";
+    TRIAL.forEach(function(t){
+      var row = document.createElement("div");
+      row.className = "row";
+      var a = document.createElement("span"); a.textContent = t.day;
+      var b = document.createElement("span"); b.textContent = t.slots;
+      row.appendChild(a); row.appendChild(b);
+      box.appendChild(row);
+    });
+    var note = document.getElementById("dataNote");
+    if(note){
+      note.textContent = "Данные от " + DATA_UPDATED + ". Перед тем как предложить слот, проверьте календарь: часть окон могла занятьcя.";
+    }
+  }
+
+  // данные лежат рядом со страницей: skript-data.json.
+  // Если файла нет (например, страница открыта как артефакт) - работают значения по умолчанию.
+  function loadData(){
+    if(typeof fetch !== "function") return;
+    fetch("skript-data.json", {cache:"no-store"}).then(function(r){
+      if(!r.ok) throw new Error("нет файла");
+      return r.json();
+    }).then(function(data){
+      if(data && data.groups) DEFAULT_SCHED = data.groups;
+      if(data && data.trial && data.trial.length) TRIAL = data.trial;
+      if(data && data.updated) DATA_UPDATED = data.updated;
+      renderSched(); renderTrial(); renderChips(); render();
+    }).catch(function(){});
+  }
+
+  renderSched();
+  renderTrial();
+  renderChips();
+  render();
+  loadData();
+})();
+</script>
