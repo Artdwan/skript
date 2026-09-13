@@ -167,6 +167,15 @@
     opacity:.5;text-decoration:line-through;border-style:dashed;
     background:transparent;
   }
+  .slot-cell{display:inline-flex;align-items:center;gap:2px}
+  .slot-left{
+    font-family:var(--mono);font-size:10.5px;margin-left:6px;opacity:.75;
+  }
+  .slot-x{
+    font:400 15px/1 var(--sans);width:20px;height:20px;padding:0;
+    border:0;background:none;color:var(--muted);cursor:pointer;border-radius:50%;
+  }
+  .slot-x:hover{background:var(--accent-soft);color:var(--ink)}
   .slot-head{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
   .slot-clear{
     font:inherit;letter-spacing:inherit;text-transform:inherit;
@@ -357,6 +366,8 @@
   var used = {};
   try{ used = JSON.parse(localStorage.getItem(USED_KEY) || "{}") || {}; }catch(e){ used = {}; }
   var picked = [];
+  var confirmedId = null;      // окно, которое родитель подтвердил
+  var MEET_FALLBACK = "";      // постоянная ссылка, если у окна своей нет
 
   function pruneUsed(){
     var now = Date.now(), changed = false;
@@ -389,17 +400,121 @@
     saveUsed();
     render();
   }
+  function dropUsed(id){                 // снять таймер с одного окна вручную
+    delete used[id];
+    var i = picked.indexOf(id);
+    if(i >= 0) picked.splice(i, 1);
+    saveUsed();
+    render();
+  }
   function usedCount(){ pruneUsed(); return Object.keys(used).length; }
+  function pickConfirmed(id){
+    confirmedId = (confirmedId === id) ? null : id;
+    render();
+  }
+  function confirmedSlot(){
+    if(confirmedId) return slotById(confirmedId);
+    if(picked.length === 1) return slotById(picked[0]);
+    return null;
+  }
+  // ——— отрисовка окон ———
+  var tickEls = [];
+  function slotGrid(list, cellFn){
+    var sr = document.createElement("div");
+    sr.className = "slots-inline";
+    if(!list.length){
+      var e = document.createElement("div");
+      e.className = "slot-empty";
+      e.textContent = "Окон нет - поставьте их в календарь «Окна для пробного»";
+      sr.appendChild(e);
+      return sr;
+    }
+    var days = [], byDay = {};
+    list.forEach(function(s){
+      if(!byDay[s.day]){ byDay[s.day] = []; days.push(s.day); }
+      byDay[s.day].push(s);
+    });
+    days.forEach(function(day){
+      var row = document.createElement("div");
+      row.className = "slot-row";
+      var lab = document.createElement("div");
+      lab.className = "slot-day";
+      lab.textContent = day;
+      row.appendChild(lab);
+      var box = document.createElement("div");
+      box.className = "chips";
+      byDay[day].forEach(function(s){ box.appendChild(cellFn(s)); });
+      row.appendChild(box);
+      sr.appendChild(row);
+    });
+    return sr;
+  }
+  function slotCell(sl){
+    var cell = document.createElement("span");
+    cell.className = "slot-cell";
+    var b = document.createElement("button");
+    b.type = "button";
+    var isPicked = picked.indexOf(sl.id) >= 0;
+    var timed = !!used[sl.id];
+    b.className = "chip slot-chip" + (timed && !isPicked ? " slot-used" : "");
+    b.setAttribute("aria-pressed", isPicked ? "true" : "false");
+    b.appendChild(document.createTextNode(sl.time));
+    if(timed){
+      var t = document.createElement("span");
+      t.className = "slot-left";
+      t.textContent = leftLabel(sl.id);
+      b.appendChild(t);
+      b.title = (isPicked ? "Стоит в тексте. " : "Уже предлагали, " + usedAgo(sl.id) + ". ")
+              + "Освободится через " + leftLabel(sl.id);
+      tickEls.push({id: sl.id, el: t});
+    }
+    b.addEventListener("click", function(){ pickSlot(sl.id); });
+    cell.appendChild(b);
+    if(timed){
+      var x = document.createElement("button");
+      x.type = "button";
+      x.className = "slot-x";
+      x.textContent = "×";
+      x.title = "Снять таймер с окна " + sl.time;
+      x.addEventListener("click", function(ev){ ev.stopPropagation(); dropUsed(sl.id); });
+      cell.appendChild(x);
+    }
+    return cell;
+  }
+  function confirmCell(sl){
+    var b = document.createElement("button");
+    b.type = "button";
+    var cur = confirmedSlot();
+    b.className = "chip slot-chip";
+    b.textContent = sl.time + (sl.meet ? "" : " (без ссылки)");
+    b.setAttribute("aria-pressed", (cur && cur.id === sl.id) ? "true" : "false");
+    b.title = sl.meet ? sl.meet : "У этого окна нет ссылки Meet - добавьте её в календаре";
+    b.addEventListener("click", function(){ pickConfirmed(sl.id); });
+    return b;
+  }
+  // сколько осталось до снятия метки: "1:58"
+  function leftLabel(id){
+    var t = used[id];
+    if(!t) return "";
+    var ms = USED_MS - (Date.now() - t);
+    if(ms <= 0) return "";
+    var mins = Math.ceil(ms / 60000);
+    return Math.floor(mins / 60) + ":" + ("0" + (mins % 60)).slice(-2);
+  }
   function fillSlots(text){
     var a = picked[0] ? slotById(picked[0]) : null;
     var b = picked[1] ? slotById(picked[1]) : null;
     // если оба окна в один день, во втором день не повторяем: "... в 13:30 или в 14:30"
     var sameDay = a && b && a.day === b.day;
+    var c = confirmedSlot();
     return text
       .replace(/\{\{день1\}\}/g, a ? a.dayFull : "в <день>")
       .replace(/\{\{время1\}\}/g, a ? a.time : "<время>")
       .replace(/\{\{день2\}\}/g, sameDay ? "" : (b ? b.dayFull : "в <день>"))
       .replace(/\{\{время2\}\}/g, b ? b.time : "<время>")
+      .replace(/\{\{деньК\}\}/g, c ? c.dayPlain : "<день, дата>")
+      .replace(/\{\{времяК\}\}/g, c ? c.time : "<время>")
+      .replace(/\{\{ссылка\}\}/g, (c && c.meet) ? c.meet : (MEET_FALLBACK || "<ссылка>"))
       .replace(/[ \t]{2,}/g, " ");
   }
   // "воскресенье, 13 сентября" -> "в воскресенье, 13 сентября"; "вторник" -> "во вторник"; "среда" -> "в среду"
@@ -590,12 +705,12 @@
     },
 
     book:{
-      slots:true,
+      confirm:true,
       status:"пробное назначено",
       stage:"Шаг 3",
       title:"Записываем на диагностику",
-      hint:"В подтверждении всегда день недели, дата и время. День недели сверяем по календарю.",
-      msgs:["Записал: <день недели>, <дата>, в <время>.\n\nСсылку пришлю за 15 минут до начала.\nЕсли продублировать её в Viber или Telegram - напишите номер или ник.\n\nЕсли планы поменяются - напишите, перенесём."],
+      hint:"Нажмите окно, которое выбрал родитель - день, время и ссылка подставятся сами.",
+      msgs:["Записал: {{деньК}}, в {{времяК}}.\n\nСсылка на занятие: {{ссылка}}\n\nНапомню накануне и пришлю ссылку ещё раз за 15 минут до начала.\nЕсли продублировать её в Viber или Telegram - напишите номер или ник.\n\nЕсли планы поменяются - напишите, перенесём."],
       next:[
         {t:"Накануне занятия", to:"remindEve"},
         {t:"За 15 минут до начала", to:"link"},
@@ -605,20 +720,22 @@
     },
 
     remindEve:{
+      confirm:true,
       status:"пробное назначено",
       stage:"Шаг 3",
       title:"Напоминание накануне",
       hint:"Без этого напоминания пробные срываются чаще всего.",
-      msgs:["<Имя>, добрый вечер!\n\nНапоминаю: завтра, <день недели> <дата>, в <время> - диагностика по <предмет>.\n\nВсё в силе?"],
+      msgs:["<Имя>, добрый вечер!\n\nНапоминаю: завтра, {{деньК}}, в {{времяК}} - диагностика по <предмет>.\n\nВсё в силе?"],
       next:[{t:"Подтвердил", to:"link"},{t:"Просит перенести", to:"move"}]
     },
 
     link:{
+      confirm:true,
       status:"пробное назначено",
       stage:"Шаг 3",
       title:"Ссылка за 15 минут",
       hint:"В первые минуты следим за запросами на вход: родитель без аккаунта может ждать, пока его впустят.",
-      msgs:["Через 15 минут начинаем.\n\nСсылка: <ссылка>"],
+      msgs:["Через 15 минут начинаем.\n\nСсылка: {{ссылка}}"],
       next:[
         {t:"Не подключился через 5 минут", to:"late"},
         {t:"Диагностика прошла", to:"after"}
@@ -909,6 +1026,7 @@
     var n = NODES[id];
     var step = document.getElementById("step");
     step.innerHTML = "";
+    tickEls = [];
 
     // хлебные крошки
     if(path.length > 1){
@@ -980,51 +1098,35 @@
       }
       sw.appendChild(sl);
 
-      var sr = document.createElement("div");
-      sr.className = "slots-inline";
-      if(!SLOTS.length){
-        var e = document.createElement("div");
-        e.className = "slot-empty";
-        e.textContent = "Окон нет - поставьте их в календарь «Окна для пробного»";
-        sr.appendChild(e);
-      }
-      var days = [], byDay = {};
-      SLOTS.forEach(function(sl2){
-        if(!byDay[sl2.day]){ byDay[sl2.day] = []; days.push(sl2.day); }
-        byDay[sl2.day].push(sl2);
-      });
-      days.forEach(function(day){
-        var row = document.createElement("div");
-        row.className = "slot-row";
-        var lab = document.createElement("div");
-        lab.className = "slot-day";
-        lab.textContent = day;
-        row.appendChild(lab);
-        var box = document.createElement("div");
-        box.className = "chips";
-        byDay[day].forEach(function(sl2){
-          var b = document.createElement("button");
-          b.type = "button";
-          var isPicked = picked.indexOf(sl2.id) >= 0;
-          var isUsed = !isPicked && used[sl2.id];
-          b.className = "chip slot-chip" + (isUsed ? " slot-used" : "");
-          b.textContent = sl2.time;
-          b.setAttribute("aria-pressed", isPicked ? "true" : "false");
-          if(isUsed) b.title = "Уже предлагали, " + usedAgo(sl2.id);
-          b.addEventListener("click", function(){ pickSlot(sl2.id); });
-          box.appendChild(b);
-        });
-        row.appendChild(box);
-        sr.appendChild(row);
-      });
-      sw.appendChild(sr);
+      sw.appendChild(slotGrid(SLOTS, slotCell));
 
       var hint2 = document.createElement("div");
       hint2.className = "slot-hint";
-      hint2.textContent = "Зелёные окна стоят в тексте сейчас, зачёркнутые - уже предлагали за последние два часа. Метка держится два часа, даже если окно ушло из текста, - чтобы не отдать его второму родителю.";
+      hint2.textContent = "Зелёные окна стоят в тексте сейчас, зачёркнутые - уже предлагали. Рядом с окном идёт обратный отсчёт: два часа оно считается занятым. Крестик снимает таймер вручную.";
       sw.appendChild(hint2);
 
       step.appendChild(sw);
+    }
+
+    if(n.confirm){
+      pruneUsed();
+      var cw = document.createElement("div");
+      cw.className = "branch";
+      var cl = document.createElement("div");
+      cl.className = "branch-label";
+      var cSel = confirmedSlot();
+      cl.textContent = cSel ? "Родитель выбрал: " + cSel.dayPlain + ", " + cSel.time
+                            : "Какое окно выбрал родитель";
+      cw.appendChild(cl);
+      var offered = picked.map(slotById).filter(Boolean);
+      cw.appendChild(slotGrid(offered.length ? offered : SLOTS, confirmCell));
+      var cHint = document.createElement("div");
+      cHint.className = "slot-hint";
+      cHint.textContent = offered.length
+        ? "Это те два окна, что вы предлагали. Нажмите то, которое родитель подтвердил - ссылка на встречу подставится в текст."
+        : "Окна вы ещё не предлагали - выберите то, о котором договорились, и ссылка подставится в текст.";
+      cw.appendChild(cHint);
+      step.appendChild(cw);
     }
 
     if(n.classPick){
@@ -1292,7 +1394,17 @@
         var full = d.toLocaleDateString("ru-RU", {weekday:"long", day:"numeric", month:"long", timeZone:TZ});
         if(!byDay[key]){ byDay[key] = []; order.push(key); }
         byDay[key].push(time);
-        SLOTS.push({id: e.start.dateTime, day: key.charAt(0).toUpperCase() + key.slice(1), dayFull: dayPhrase(full), time: time});
+        var meet = e.hangoutLink ||
+          (e.conferenceData && e.conferenceData.entryPoints &&
+           (e.conferenceData.entryPoints.filter(function(p){ return p.entryPointType === "video"; })[0] || {}).uri) || "";
+        SLOTS.push({
+          id: e.start.dateTime,
+          day: key.charAt(0).toUpperCase() + key.slice(1),
+          dayFull: dayPhrase(full),
+          dayPlain: full,
+          time: time,
+          meet: meet
+        });
       });
       TRIAL = order.map(function(k){
         return {day: k.charAt(0).toUpperCase() + k.slice(1), slots: byDay[k].join(", ")};
@@ -1315,6 +1427,7 @@
       if(data && data.groups) DEFAULT_SCHED = data.groups;
       if(data && data.trial && data.trial.length) TRIAL = data.trial;
       if(data && data.updated) DATA_UPDATED = data.updated;
+      if(data && data.meet) MEET_FALLBACK = data.meet;
       renderSched(); renderTrial(); renderChips(); render();
     }).catch(function(){});
   }
@@ -1325,10 +1438,21 @@
       String(t.slots).split(",").forEach(function(time){
         time = time.trim();
         if(!time || !/^\d/.test(time)) return;
-        SLOTS.push({id: t.day + "|" + time, day: t.day, dayFull: dayPhrase(t.day), time: time});
+        SLOTS.push({id: t.day + "|" + time, day: t.day, dayFull: dayPhrase(t.day), dayPlain: t.day.toLowerCase(), time: time, meet: ""});
       });
     });
   }
+
+  // обратный отсчёт на окнах тикает без перезагрузки страницы
+  setInterval(function(){
+    if(!tickEls.length) return;
+    var stale = false;
+    tickEls.forEach(function(t){
+      var s = leftLabel(t.id);
+      if(!s) stale = true; else t.el.textContent = s;
+    });
+    if(stale){ pruneUsed(); render(); }
+  }, 20000);
 
   pruneUsed();
   slotsFromTrial();
