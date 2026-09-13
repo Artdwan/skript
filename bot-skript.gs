@@ -3,13 +3,28 @@
  * Принимает данные со страницы скрипта, отправляет их в Telegram
  * и переименовывает окно в календаре, чтобы оно ушло из свободных.
  *
- * Заполните три строки ниже, потом Развернуть - Новое развёртывание -
- * Веб-приложение, запуск от своего имени, доступ "Все".
+ * Токен и чат НЕ в коде. Настройки проекта - Свойства скрипта:
+ *   TG_TOKEN - токен от BotFather
+ *   TG_CHAT  - id чата или группы
  */
 
-var TOKEN   = 'ВСТАВЬТЕ_ТОКЕН_ОТ_BOTFATHER';
-var CHAT_ID = 'ВСТАВЬТЕ_ID_ЧАТА';
-var CAL_ID  = 'b43eb3d7776bfcea6809d656966accc9e36cc6cdcf0ea8b0c5b093a514086e67@group.calendar.google.com';
+var CAL_ID = 'b43eb3d7776bfcea6809d656966accc9e36cc6cdcf0ea8b0c5b093a514086e67@group.calendar.google.com';
+
+function cfg(key) {
+  return PropertiesService.getScriptProperties().getProperty(key) || '';
+}
+
+function tg(text) {
+  var token = cfg('TG_TOKEN');
+  var chat  = cfg('TG_CHAT');
+  if (!token || !chat) return 'нет TG_TOKEN или TG_CHAT в свойствах скрипта';
+  var res = UrlFetchApp.fetch('https://api.telegram.org/bot' + token + '/sendMessage', {
+    method: 'post',
+    payload: { chat_id: chat, text: text, disable_web_page_preview: 'true' },
+    muteHttpExceptions: true
+  });
+  return res.getContentText();
+}
 
 function doPost(e) {
   var d = {};
@@ -22,16 +37,7 @@ function doPost(e) {
     'Когда: '     + (d.when  || '-') + '\n' +
     'Ссылка: '    + (d.link  || '-')
   );
-
-  UrlFetchApp.fetch('https://api.telegram.org/bot' + TOKEN + '/sendMessage', {
-    method: 'post',
-    payload: {
-      chat_id: CHAT_ID,
-      text: text,
-      disable_web_page_preview: 'true'
-    },
-    muteHttpExceptions: true
-  });
+  tg(text);
 
   if (d.start) {
     try {
@@ -40,7 +46,7 @@ function doPost(e) {
       var list  = cal.getEvents(new Date(start.getTime() - 60000),
                                 new Date(start.getTime() + 60000));
       for (var i = 0; i < list.length; i++) {
-        var title = list[i].getTitle() || '';
+        var title = String(list[i].getTitle() || '');
         if (title.toLowerCase().indexOf('своб') === 0) {
           list[i].setTitle('Пробное: ' + (d.insta || '') + ' ' + (d.klass || ''));
           break;
@@ -52,11 +58,11 @@ function doPost(e) {
   return ContentService.createTextOutput('ok');
 }
 
-/** Разовая проверка: запустите эту функцию, чтобы убедиться, что бот пишет в нужный чат. */
+function doGet() {
+  return ContentService.createTextOutput('АртТич: приёмник записи пробного работает.');
+}
+
+/** Разовая проверка: запустите, чтобы убедиться, что бот пишет в нужный чат. */
 function testMessage() {
-  UrlFetchApp.fetch('https://api.telegram.org/bot' + TOKEN + '/sendMessage', {
-    method: 'post',
-    payload: { chat_id: CHAT_ID, text: 'Проверка связи: скрипт АртТич подключён.' },
-    muteHttpExceptions: true
-  });
+  Logger.log(tg('Проверка связи: скрипт АртТич подключён.'));
 }
