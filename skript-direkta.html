@@ -396,9 +396,10 @@
     if(changed){ try{ localStorage.setItem(USED_KEY, JSON.stringify(used)); }catch(e){} }
   }
   function saveUsed(){ try{ localStorage.setItem(USED_KEY, JSON.stringify(used)); }catch(e){} }
+  var snapSlots = {};             // записанные окна: их уже нет в календаре, но текст должен их помнить
   function slotById(id){
     for(var i = 0; i < SLOTS.length; i++){ if(SLOTS[i].id === id) return SLOTS[i]; }
-    return null;
+    return snapSlots[id] || null;
   }
   // Любое нажатие помечает окно на два часа. Метка не снимается,
   // когда окно уходит из текста - чтобы было видно, что его уже предлагали.
@@ -460,10 +461,9 @@
     function done(state){
       booked[s.id] = Date.now();
       saveBooked();
+      snapSlots[s.id] = s;          // чтобы текст записи не потерял день и ссылку
       delete used[s.id];
-      var i = picked.indexOf(s.id); if(i >= 0) picked.splice(i, 1);
       saveUsed();
-      confirmedId = null;
       bookState = state;
       dropBookedFromSlots();
       render();
@@ -490,6 +490,13 @@
   function dropBookedFromSlots(){
     SLOTS = SLOTS.filter(function(s){ return !booked[s.id]; });
     renderTrial();
+  }
+  function resetClient(){
+    picked = [];
+    confirmedId = null;
+    snapSlots = {};
+    bookInsta = "";
+    bookState = "";
   }
   function pruneBooked(){
     var now = Date.now(), changed = false;
@@ -1123,7 +1130,7 @@
       var home = document.createElement("button");
       home.type = "button";
       home.textContent = "В начало";
-      home.addEventListener("click", function(){ path = ["start"]; picked = []; render(); });
+      home.addEventListener("click", function(){ path = ["start"]; resetClient(); render(); });
       cr.appendChild(back);
       var dot = document.createElement("span"); dot.textContent = "·"; cr.appendChild(dot);
       cr.appendChild(home);
@@ -1341,7 +1348,7 @@
         var ar = document.createElement("span"); ar.className = "arrow"; ar.textContent = "→";
         b.appendChild(span); b.appendChild(ar);
         b.addEventListener("click", function(){
-          if(o.to === "start"){ path = ["start"]; picked = []; } else { path.push(o.to); }
+          if(o.to === "start"){ path = ["start"]; resetClient(); } else { path.push(o.to); }
           render();
           document.getElementById("step").scrollIntoView({block:"start", behavior:"smooth"});
         });
