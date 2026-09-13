@@ -153,9 +153,21 @@
   .chip[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
   .chip-empty{border-style:dashed;color:var(--muted)}
   .slots-inline{
-    background:var(--accent-soft);border-radius:10px;padding:12px 14px;gap:6px;
+    background:var(--accent-soft);border-radius:10px;padding:12px 14px;
+    display:grid;gap:10px;
   }
-  .slots-inline .row span:last-child{color:var(--ink)}
+  .slot-row{display:grid;gap:6px}
+  .slot-day{
+    font-family:var(--mono);font-size:11px;letter-spacing:.06em;color:var(--muted);
+  }
+  .slot-chip{
+    font-variant-numeric:tabular-nums;padding:8px 11px;
+  }
+  .slot-chip.slot-used{
+    opacity:.55;text-decoration:line-through;border-style:dashed;
+  }
+  .slot-hint{font-size:13px;color:var(--muted)}
+  .slot-empty{font-size:14px;color:var(--warn)}
   .subj-caption{
     font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;
     color:var(--muted);margin-top:4px;
@@ -331,6 +343,56 @@
   var groupIndex = 0;
   var SCHED_KEY = "arttich-schedule-v2";
   // расписание из календаря центра, неделя 7-13 сентября
+  var SLOTS = [];
+  var USED_KEY = "arttich-used-slots-v1";
+  var USED_MS = 2 * 60 * 60 * 1000;
+  var used = {};
+  try{ used = JSON.parse(localStorage.getItem(USED_KEY) || "{}") || {}; }catch(e){ used = {}; }
+  var picked = [];
+
+  function pruneUsed(){
+    var now = Date.now(), changed = false;
+    Object.keys(used).forEach(function(k){
+      if(now - used[k] > USED_MS){ delete used[k]; changed = true; }
+    });
+    if(changed){ try{ localStorage.setItem(USED_KEY, JSON.stringify(used)); }catch(e){} }
+  }
+  function saveUsed(){ try{ localStorage.setItem(USED_KEY, JSON.stringify(used)); }catch(e){} }
+  function slotById(id){
+    for(var i = 0; i < SLOTS.length; i++){ if(SLOTS[i].id === id) return SLOTS[i]; }
+    return null;
+  }
+  function pickSlot(id){
+    var i = picked.indexOf(id);
+    if(i >= 0){
+      picked.splice(i, 1);
+      delete used[id];
+    } else {
+      if(picked.length >= 2){ delete used[picked.shift()]; }
+      picked.push(id);
+      used[id] = Date.now();
+    }
+    saveUsed();
+    render();
+  }
+  function fillSlots(text){
+    var a = picked[0] ? slotById(picked[0]) : null;
+    var b = picked[1] ? slotById(picked[1]) : null;
+    return text
+      .replace(/\{\{день1\}\}/g, a ? a.dayFull : "<день>")
+      .replace(/\{\{время1\}\}/g, a ? a.time : "<время>")
+      .replace(/\{\{день2\}\}/g, b ? b.dayFull : "<день>")
+      .replace(/\{\{время2\}\}/g, b ? b.time : "<время>");
+  }
+  function usedAgo(id){
+    var t = used[id];
+    if(!t) return "";
+    var mins = Math.round((Date.now() - t) / 60000);
+    if(mins < 1) return "только что";
+    if(mins < 60) return mins + " мин назад";
+    return "больше часа назад";
+  }
+
   var TRIAL = [
     {day:"Понедельник", slots:"15:00, 16:00, 17:00, 18:00"},
     {day:"Вт, ср, чт, пт", slots:"15:45"},
@@ -468,7 +530,7 @@
         return [
           "Для " + k.full + " есть группа по " + subject() + ".\n\n" + offerLines(),
           "Месяц - " + k.price + " рублей, это " + k.lo + "-" + k.hi + " занятий.\nПервый абонемент со скидкой 50% - " + half() + " рублей.",
-          "Начнём с бесплатной диагностики на 30-40 минут: посмотрю уровень и скажу, с чего начинать.\n\nУдобно в <день> в <время> или в <день> в <время>?"
+          "Начнём с бесплатной диагностики на 30-40 минут: посмотрю уровень и скажу, с чего начинать.\n\nУдобно в {{день1}} в {{время1}} или в {{день2}} в {{время2}}?"
         ];
       },
       note:function(){
@@ -493,7 +555,7 @@
       status:"ответил",
       stage:"Шаг 2",
       title:"«Сколько человек в группе?»",
-      msgs:["В группе до 7 учеников - я вижу каждого и успеваю подойти.\n\nРабота над пробелами и разбор ошибок входят в абонемент.\n\nЗапишу на бесплатную диагностику? Удобно в <день> в <время> или в <день> в <время>?"],
+      msgs:["В группе до 7 учеников - я вижу каждого и успеваю подойти.\n\nРабота над пробелами и разбор ошибок входят в абонемент.\n\nЗапишу на бесплатную диагностику? Удобно в {{день1}} в {{время1}} или в {{день2}} в {{время2}}?"],
       next:[{t:"Согласился на диагностику", to:"book"},{t:"«Подумаем»", to:"think"}]
     },
 
@@ -547,7 +609,7 @@
       stage:"Шаг 3",
       title:"Перенос",
       hint:"Новые слоты — в том же сообщении. Пауза на сутки здесь уже стоила нам клиентов.",
-      msgs:["Хорошо, перенесём.\n\nМогу <день> в <время> или <день> в <время>. Как удобнее?"],
+      msgs:["Хорошо, перенесём.\n\nМогу {{день1}} в {{время1}} или {{день2}} в {{время2}}. Как удобнее?"],
       next:[{t:"Выбрал время", to:"book"}]
     },
 
@@ -557,7 +619,7 @@
       stage:"Шаг 3",
       title:"Не пришёл на диагностику",
       hint:"Пишем на следующий день. Если человек не пришёл больше двух раз — такого ученика не берём.",
-      msgs:["<Имя>, добрый день!\n\nВчера не получилось встретиться на диагностике.\n\nМогу предложить <день> в <время> или <день> в <время>.\nЕсли сейчас не до этого - напишите, беспокоить не буду."],
+      msgs:["<Имя>, добрый день!\n\nВчера не получилось встретиться на диагностике.\n\nМогу предложить {{день1}} в {{время1}} или {{день2}} в {{время2}}.\nЕсли сейчас не до этого - напишите, беспокоить не буду."],
       next:[{t:"Выбрал новое время", to:"book"},{t:"Молчит", to:"rem1"}]
     },
 
@@ -650,7 +712,7 @@
       stage:"Возражение",
       title:"«Ждём расписание школы или секции»",
       hint:"Сентябрьская классика. Разводим два решения: диагностику можно сейчас, группу — потом.",
-      msgs:["Понимаю, в сентябре у всех так.\n\nДиагностику можно пройти уже сейчас - она ни к чему не привязывает, а группу выберем, когда будет понятно расписание.\n\nУдобно в <день> в <время> или в <день> в <время>?"],
+      msgs:["Понимаю, в сентябре у всех так.\n\nДиагностику можно пройти уже сейчас - она ни к чему не привязывает, а группу выберем, когда будет понятно расписание.\n\nУдобно в {{день1}} в {{время1}} или в {{день2}} в {{время2}}?"],
       note:"Если диагностику сейчас не хотят — пишем «Хорошо, напишу вам <день>» и обязательно пишем в этот день.",
       next:[{t:"Согласился на диагностику", to:"book"},{t:"«Напишем сами»", to:"think"}]
     },
@@ -724,7 +786,7 @@
       stage:"Напоминание 1",
       title:"Через сутки: новые слоты",
       hint:"Напоминание всегда несёт что-то новое. «Ну как, надумали?» не пишем никогда.",
-      msgs:["<Имя>, добрый день!\n\nНа этой неделе есть два свободных окна для диагностики: <день> в <время> и <день> в <время>.\n\nКакое удобнее?"],
+      msgs:["<Имя>, добрый день!\n\nЕсть два свободных окна для диагностики: {{день1}} в {{время1}} и {{день2}} в {{время2}}.\n\nКакое удобнее?"],
       next:[{t:"Ответил", to:"offer"},{t:"Молчит ещё три дня", to:"rem2"}]
     },
 
@@ -734,7 +796,7 @@
       stage:"Напоминание 2",
       title:"Через три дня: показываем контроль",
       hint:"Приложить 1-2 скрина онлайн-тетради — это то, чего нет у большинства репетиторов.",
-      msgs:["<Имя>, добрый день!\n\nПокажу, как устроены домашние задания - за счёт них и подтягивается отметка.\n\nУченик решает в онлайн-тетради, часть ответов проверяется сразу, полное решение присылает фото. Я вижу каждую ошибку и возвращаюсь к этим темам на занятии.\n\nДиагностика бесплатная - <день> в <время> свободно."],
+      msgs:["<Имя>, добрый день!\n\nПокажу, как устроены домашние задания - за счёт них и подтягивается отметка.\n\nУченик решает в онлайн-тетради, часть ответов проверяется сразу, полное решение присылает фото. Я вижу каждую ошибку и возвращаюсь к этим темам на занятии.\n\nДиагностика бесплатная - {{день1}} в {{время1}} свободно."],
       next:[{t:"Ответил", to:"offer"},{t:"Молчит ещё неделю", to:"rem3"}]
     },
 
@@ -752,7 +814,7 @@
       stage:"Возврат",
       title:"Писал до старта занятий, группы уже идут",
       hint:"Для тех, кто прочитал предложение в августе и пропал. Повод написать — новая информация, а не «напоминаю о себе».",
-      msgs:["Добрый день!\n\nВы писали нам <когда> про занятия по <предмет>.\n\nГруппы уже начались, но присоединиться ещё можно.\n\nСкидка 50% на первый абонемент сохраняется: оплачиваете оставшиеся занятия <месяца> и весь <следующий месяц>.\n\nНачнём с бесплатной диагностики.\nУдобно в <день> в <время> или в <день> в <время>?"],
+      msgs:["Добрый день!\n\nВы писали нам <когда> про занятия по <предмет>.\n\nГруппы уже начались, но присоединиться ещё можно.\n\nСкидка 50% на первый абонемент сохраняется: оплачиваете оставшиеся занятия <месяца> и весь <следующий месяц>.\n\nНачнём с бесплатной диагностики.\nУдобно в {{день1}} в {{время1}} или в {{день2}} в {{время2}}?"],
       next:[{t:"Ответил", to:"offer"},{t:"Вернуться к началу", to:"start"}]
     },
 
@@ -866,28 +928,59 @@
     step.appendChild(head);
 
     if(n.slots){
+      pruneUsed();
       var sw = document.createElement("div");
       sw.className = "branch";
       var sl = document.createElement("div");
       sl.className = "branch-label";
-      sl.textContent = "Свободные окна для пробного";
+      sl.textContent = picked.length ? "Окна для пробного - выбрано " + picked.length + " из 2"
+                                     : "Окна для пробного - нажмите два варианта";
       sw.appendChild(sl);
+
       var sr = document.createElement("div");
-      sr.className = "rows slots-inline";
-      if(!TRIAL.length){
+      sr.className = "slots-inline";
+      if(!SLOTS.length){
         var e = document.createElement("div");
-        e.className = "row"; e.textContent = "Окон нет - поставьте их в календарь";
+        e.className = "slot-empty";
+        e.textContent = "Окон нет - поставьте их в календарь «Окна для пробного»";
         sr.appendChild(e);
       }
-      TRIAL.forEach(function(t){
+      var days = [], byDay = {};
+      SLOTS.forEach(function(sl2){
+        if(!byDay[sl2.day]){ byDay[sl2.day] = []; days.push(sl2.day); }
+        byDay[sl2.day].push(sl2);
+      });
+      days.forEach(function(day){
         var row = document.createElement("div");
-        row.className = "row";
-        var a = document.createElement("span"); a.textContent = t.day;
-        var b = document.createElement("span"); b.textContent = t.slots;
-        row.appendChild(a); row.appendChild(b);
+        row.className = "slot-row";
+        var lab = document.createElement("div");
+        lab.className = "slot-day";
+        lab.textContent = day;
+        row.appendChild(lab);
+        var box = document.createElement("div");
+        box.className = "chips";
+        byDay[day].forEach(function(sl2){
+          var b = document.createElement("button");
+          b.type = "button";
+          var isPicked = picked.indexOf(sl2.id) >= 0;
+          var isUsed = !isPicked && used[sl2.id];
+          b.className = "chip slot-chip" + (isUsed ? " slot-used" : "");
+          b.textContent = sl2.time;
+          b.setAttribute("aria-pressed", isPicked ? "true" : "false");
+          if(isUsed) b.title = "Уже предлагали, " + usedAgo(sl2.id);
+          b.addEventListener("click", function(){ pickSlot(sl2.id); });
+          box.appendChild(b);
+        });
+        row.appendChild(box);
         sr.appendChild(row);
       });
       sw.appendChild(sr);
+
+      var hint2 = document.createElement("div");
+      hint2.className = "slot-hint";
+      hint2.textContent = "Выбранные окна подставляются в текст. После нажатия окно два часа помечено как уже предложенное - чтобы не отдать его второму родителю.";
+      sw.appendChild(hint2);
+
       step.appendChild(sw);
     }
 
@@ -928,6 +1021,7 @@
     if(msgs.length){
       var box = document.createElement("div");
       box.className = "msgs";
+      msgs = msgs.map(fillSlots);
       msgs.forEach(function(text, i){
         var m = document.createElement("div");
         m.className = "msg";
@@ -1147,17 +1241,23 @@
         return;
       }
       var byDay = {}, order = [];
+      SLOTS = [];
       items.forEach(function(e){
         var d = new Date(e.start.dateTime);
         var key = d.toLocaleDateString("ru-RU", {weekday:"short", day:"numeric", month:"long", timeZone:TZ});
+        var time = d.toLocaleTimeString("ru-RU", {hour:"2-digit", minute:"2-digit", timeZone:TZ});
+        var full = d.toLocaleDateString("ru-RU", {weekday:"long", day:"numeric", month:"long", timeZone:TZ});
         if(!byDay[key]){ byDay[key] = []; order.push(key); }
-        byDay[key].push(d.toLocaleTimeString("ru-RU", {hour:"2-digit", minute:"2-digit", timeZone:TZ}));
+        byDay[key].push(time);
+        SLOTS.push({id: e.start.dateTime, day: key.charAt(0).toUpperCase() + key.slice(1), dayFull: full, time: time});
       });
       TRIAL = order.map(function(k){
         return {day: k.charAt(0).toUpperCase() + k.slice(1), slots: byDay[k].join(", ")};
       });
       DATA_UPDATED = "календаря, " + new Date().toLocaleTimeString("ru-RU", {hour:"2-digit", minute:"2-digit", timeZone:TZ});
+      picked = [];
       renderTrial();
+      render();
     }).catch(function(){});
   }
 
@@ -1176,6 +1276,19 @@
     }).catch(function(){});
   }
 
+  function slotsFromTrial(){
+    if(SLOTS.length) return;
+    TRIAL.forEach(function(t){
+      String(t.slots).split(",").forEach(function(time){
+        time = time.trim();
+        if(!time || !/^\d/.test(time)) return;
+        SLOTS.push({id: t.day + "|" + time, day: t.day, dayFull: t.day.toLowerCase(), time: time});
+      });
+    });
+  }
+
+  pruneUsed();
+  slotsFromTrial();
   renderSched();
   renderTrial();
   renderChips();
