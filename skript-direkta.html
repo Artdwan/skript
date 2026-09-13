@@ -379,10 +379,22 @@
     var a = picked[0] ? slotById(picked[0]) : null;
     var b = picked[1] ? slotById(picked[1]) : null;
     return text
-      .replace(/\{\{день1\}\}/g, a ? a.dayFull : "<день>")
+      .replace(/\{\{день1\}\}/g, a ? a.dayFull : "в <день>")
       .replace(/\{\{время1\}\}/g, a ? a.time : "<время>")
-      .replace(/\{\{день2\}\}/g, b ? b.dayFull : "<день>")
+      .replace(/\{\{день2\}\}/g, b ? b.dayFull : "в <день>")
       .replace(/\{\{время2\}\}/g, b ? b.time : "<время>");
+  }
+  // "воскресенье, 13 сентября" -> "в воскресенье, 13 сентября"; "вторник" -> "во вторник"; "среда" -> "в среду"
+  var DAY_CASE = {
+    "понедельник":"в понедельник", "вторник":"во вторник", "среда":"в среду",
+    "четверг":"в четверг", "пятница":"в пятницу", "суббота":"в субботу",
+    "воскресенье":"в воскресенье"
+  };
+  function dayPhrase(full){
+    var parts = String(full).split(", ");
+    var wd = (parts[0] || "").toLowerCase();
+    var head = DAY_CASE[wd] || ("в " + wd);
+    return parts.length > 1 ? head + ", " + parts.slice(1).join(", ") : head;
   }
   function usedAgo(id){
     var t = used[id];
@@ -522,7 +534,7 @@
       status:"ответил",
       stage:"Шаг 2",
       title:"Предложение",
-      hint:"Три коротких сообщения подряд: группа, цена, диагностика. Выберите класс слева — цифры подставятся сами.",
+      hint:"Три коротких сообщения подряд: группа, цена, диагностика. Цена и расписание подставились по классу; нажмите два окна — они встанут в третье сообщение.",
       picker:true,
       msgs:function(){
         var k = c();
@@ -530,7 +542,7 @@
         return [
           "Для " + k.full + " есть группа по " + subject() + ".\n\n" + offerLines(),
           "Месяц - " + k.price + " рублей, это " + k.lo + "-" + k.hi + " занятий.\nПервый абонемент со скидкой 50% - " + half() + " рублей.",
-          "Начнём с бесплатной диагностики на 30-40 минут: посмотрю уровень и скажу, с чего начинать.\n\nУдобно в {{день1}} в {{время1}} или в {{день2}} в {{время2}}?"
+          "Начнём с бесплатной диагностики на 30-40 минут: посмотрю уровень и скажу, с чего начинать.\n\nУдобно {{день1}} в {{время1}} или {{день2}} в {{время2}}?"
         ];
       },
       note:function(){
@@ -555,7 +567,7 @@
       status:"ответил",
       stage:"Шаг 2",
       title:"«Сколько человек в группе?»",
-      msgs:["В группе до 7 учеников - я вижу каждого и успеваю подойти.\n\nРабота над пробелами и разбор ошибок входят в абонемент.\n\nЗапишу на бесплатную диагностику? Удобно в {{день1}} в {{время1}} или в {{день2}} в {{время2}}?"],
+      msgs:["В группе до 7 учеников - я вижу каждого и успеваю подойти.\n\nРабота над пробелами и разбор ошибок входят в абонемент.\n\nЗапишу на бесплатную диагностику? Удобно {{день1}} в {{время1}} или {{день2}} в {{время2}}?"],
       next:[{t:"Согласился на диагностику", to:"book"},{t:"«Подумаем»", to:"think"}]
     },
 
@@ -712,7 +724,7 @@
       stage:"Возражение",
       title:"«Ждём расписание школы или секции»",
       hint:"Сентябрьская классика. Разводим два решения: диагностику можно сейчас, группу — потом.",
-      msgs:["Понимаю, в сентябре у всех так.\n\nДиагностику можно пройти уже сейчас - она ни к чему не привязывает, а группу выберем, когда будет понятно расписание.\n\nУдобно в {{день1}} в {{время1}} или в {{день2}} в {{время2}}?"],
+      msgs:["Понимаю, в сентябре у всех так.\n\nДиагностику можно пройти уже сейчас - она ни к чему не привязывает, а группу выберем, когда будет понятно расписание.\n\nУдобно {{день1}} в {{время1}} или {{день2}} в {{время2}}?"],
       note:"Если диагностику сейчас не хотят — пишем «Хорошо, напишу вам <день>» и обязательно пишем в этот день.",
       next:[{t:"Согласился на диагностику", to:"book"},{t:"«Напишем сами»", to:"think"}]
     },
@@ -814,7 +826,7 @@
       stage:"Возврат",
       title:"Писал до старта занятий, группы уже идут",
       hint:"Для тех, кто прочитал предложение в августе и пропал. Повод написать — новая информация, а не «напоминаю о себе».",
-      msgs:["Добрый день!\n\nВы писали нам <когда> про занятия по <предмет>.\n\nГруппы уже начались, но присоединиться ещё можно.\n\nСкидка 50% на первый абонемент сохраняется: оплачиваете оставшиеся занятия <месяца> и весь <следующий месяц>.\n\nНачнём с бесплатной диагностики.\nУдобно в {{день1}} в {{время1}} или в {{день2}} в {{время2}}?"],
+      msgs:["Добрый день!\n\nВы писали нам <когда> про занятия по <предмет>.\n\nГруппы уже начались, но присоединиться ещё можно.\n\nСкидка 50% на первый абонемент сохраняется: оплачиваете оставшиеся занятия <месяца> и весь <следующий месяц>.\n\nНачнём с бесплатной диагностики.\nУдобно {{день1}} в {{время1}} или {{день2}} в {{время2}}?"],
       next:[{t:"Ответил", to:"offer"},{t:"Вернуться к началу", to:"start"}]
     },
 
@@ -891,7 +903,7 @@
       var home = document.createElement("button");
       home.type = "button";
       home.textContent = "В начало";
-      home.addEventListener("click", function(){ path = ["start"]; render(); });
+      home.addEventListener("click", function(){ path = ["start"]; picked = []; render(); });
       cr.appendChild(back);
       var dot = document.createElement("span"); dot.textContent = "·"; cr.appendChild(dot);
       cr.appendChild(home);
@@ -1068,7 +1080,7 @@
         var ar = document.createElement("span"); ar.className = "arrow"; ar.textContent = "→";
         b.appendChild(span); b.appendChild(ar);
         b.addEventListener("click", function(){
-          if(o.to === "start"){ path = ["start"]; } else { path.push(o.to); }
+          if(o.to === "start"){ path = ["start"]; picked = []; } else { path.push(o.to); }
           render();
           document.getElementById("step").scrollIntoView({block:"start", behavior:"smooth"});
         });
@@ -1249,7 +1261,7 @@
         var full = d.toLocaleDateString("ru-RU", {weekday:"long", day:"numeric", month:"long", timeZone:TZ});
         if(!byDay[key]){ byDay[key] = []; order.push(key); }
         byDay[key].push(time);
-        SLOTS.push({id: e.start.dateTime, day: key.charAt(0).toUpperCase() + key.slice(1), dayFull: full, time: time});
+        SLOTS.push({id: e.start.dateTime, day: key.charAt(0).toUpperCase() + key.slice(1), dayFull: dayPhrase(full), time: time});
       });
       TRIAL = order.map(function(k){
         return {day: k.charAt(0).toUpperCase() + k.slice(1), slots: byDay[k].join(", ")};
@@ -1282,7 +1294,7 @@
       String(t.slots).split(",").forEach(function(time){
         time = time.trim();
         if(!time || !/^\d/.test(time)) return;
-        SLOTS.push({id: t.day + "|" + time, day: t.day, dayFull: t.day.toLowerCase(), time: time});
+        SLOTS.push({id: t.day + "|" + time, day: t.day, dayFull: dayPhrase(t.day), time: time});
       });
     });
   }
