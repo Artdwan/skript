@@ -393,11 +393,14 @@
   function fillSlots(text){
     var a = picked[0] ? slotById(picked[0]) : null;
     var b = picked[1] ? slotById(picked[1]) : null;
+    // если оба окна в один день, во втором день не повторяем: "... в 13:30 или в 14:30"
+    var sameDay = a && b && a.day === b.day;
     return text
       .replace(/\{\{день1\}\}/g, a ? a.dayFull : "в <день>")
       .replace(/\{\{время1\}\}/g, a ? a.time : "<время>")
-      .replace(/\{\{день2\}\}/g, b ? b.dayFull : "в <день>")
-      .replace(/\{\{время2\}\}/g, b ? b.time : "<время>");
+      .replace(/\{\{день2\}\}/g, sameDay ? "" : (b ? b.dayFull : "в <день>"))
+      .replace(/\{\{время2\}\}/g, b ? b.time : "<время>")
+      .replace(/[ \t]{2,}/g, " ");
   }
   // "воскресенье, 13 сентября" -> "в воскресенье, 13 сентября"; "вторник" -> "во вторник"; "среда" -> "в среду"
   var DAY_CASE = {
