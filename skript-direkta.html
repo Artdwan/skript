@@ -164,8 +164,16 @@
     font-variant-numeric:tabular-nums;padding:8px 11px;
   }
   .slot-chip.slot-used{
-    opacity:.55;text-decoration:line-through;border-style:dashed;
+    opacity:.5;text-decoration:line-through;border-style:dashed;
+    background:transparent;
   }
+  .slot-head{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+  .slot-clear{
+    font:inherit;letter-spacing:inherit;text-transform:inherit;
+    background:none;border:0;padding:0;color:var(--muted);
+    text-decoration:underline;cursor:pointer;
+  }
+  .slot-clear:hover{color:var(--ink)}
   .slot-hint{font-size:13px;color:var(--muted)}
   .slot-empty{font-size:14px;color:var(--warn)}
   .subj-caption{
@@ -362,19 +370,26 @@
     for(var i = 0; i < SLOTS.length; i++){ if(SLOTS[i].id === id) return SLOTS[i]; }
     return null;
   }
+  // Любое нажатие помечает окно на два часа. Метка не снимается,
+  // когда окно уходит из текста - чтобы было видно, что его уже предлагали.
   function pickSlot(id){
     var i = picked.indexOf(id);
     if(i >= 0){
       picked.splice(i, 1);
-      delete used[id];
     } else {
-      if(picked.length >= 2){ delete used[picked.shift()]; }
+      if(picked.length >= 2){ picked.shift(); }
       picked.push(id);
-      used[id] = Date.now();
     }
+    used[id] = Date.now();
     saveUsed();
     render();
   }
+  function clearUsed(){
+    used = {}; picked = [];
+    saveUsed();
+    render();
+  }
+  function usedCount(){ pruneUsed(); return Object.keys(used).length; }
   function fillSlots(text){
     var a = picked[0] ? slotById(picked[0]) : null;
     var b = picked[1] ? slotById(picked[1]) : null;
@@ -944,9 +959,22 @@
       var sw = document.createElement("div");
       sw.className = "branch";
       var sl = document.createElement("div");
-      sl.className = "branch-label";
-      sl.textContent = picked.length ? "Окна для пробного - выбрано " + picked.length + " из 2"
-                                     : "Окна для пробного - нажмите два варианта";
+      sl.className = "branch-label slot-head";
+      var slText = document.createElement("span");
+      var nUsed = usedCount();
+      slText.textContent = (picked.length ? "Окна для пробного - в тексте " + picked.length + " из 2"
+                                          : "Окна для пробного - нажмите два варианта")
+                         + (nUsed ? " · уже предлагали: " + nUsed : "");
+      sl.appendChild(slText);
+      if(nUsed){
+        var clr = document.createElement("button");
+        clr.type = "button";
+        clr.className = "slot-clear";
+        clr.textContent = "снять метки";
+        clr.title = "Убрать все пометки «уже предлагали»";
+        clr.addEventListener("click", clearUsed);
+        sl.appendChild(clr);
+      }
       sw.appendChild(sl);
 
       var sr = document.createElement("div");
@@ -990,7 +1018,7 @@
 
       var hint2 = document.createElement("div");
       hint2.className = "slot-hint";
-      hint2.textContent = "Выбранные окна подставляются в текст. После нажатия окно два часа помечено как уже предложенное - чтобы не отдать его второму родителю.";
+      hint2.textContent = "Зелёные окна стоят в тексте сейчас, зачёркнутые - уже предлагали за последние два часа. Метка держится два часа, даже если окно ушло из текста, - чтобы не отдать его второму родителю.";
       sw.appendChild(hint2);
 
       step.appendChild(sw);
