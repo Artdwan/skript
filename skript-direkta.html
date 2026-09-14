@@ -167,6 +167,18 @@
     opacity:.5;text-decoration:line-through;border-style:dashed;
     background:transparent;
   }
+  .book-item{
+    display:grid;gap:3px;padding:10px 0;border-bottom:1px solid var(--line);
+  }
+  .book-item:last-child{border-bottom:0;padding-bottom:0}
+  .book-who{font:600 14px/1.3 var(--sans)}
+  .book-when{font-size:13px;color:var(--muted)}
+  .book-foot{display:flex;gap:12px;align-items:baseline;flex-wrap:wrap;margin-top:2px}
+  .book-link{font-size:12px;color:var(--muted)}
+  .book-cancel{
+    font:inherit;font-size:12px;background:none;border:0;padding:0;
+    color:var(--warn);text-decoration:underline;cursor:pointer;
+  }
   .book-row{display:flex;gap:8px;flex-wrap:wrap}
   .book-input{
     flex:1 1 240px;min-width:0;font:400 14px/1.3 var(--sans);
@@ -266,6 +278,12 @@
           <button type="button" class="chip" id="schedReset" hidden>Вернуть из календаря</button>
         </div>
         <p id="schedNote">По одной группе в строке. Постоянные изменения вносятся в файл skript-data.json рядом со страницей; правка здесь сохраняется только в этом браузере.</p>
+      </div>
+
+      <div class="panel">
+        <h3>Записанные пробные</h3>
+        <div id="bookRows" class="rows"></div>
+        <p id="bookNote">Отсюда пробное можно отменить: окно вернётся в свободные, а событие в календаре снова станет жёлтым.</p>
       </div>
 
       <div class="panel">
@@ -465,7 +483,14 @@
       delete used[s.id];
       saveUsed();
       bookState = state;
+      BOOKINGS.push({
+        id: s.id, day: s.day, dayFull: s.dayFull, dayPlain: s.dayPlain,
+        time: s.time, meet: s.meet, insta: bookInsta || "",
+        klass: c().subj + ", " + c().label
+      });
+      BOOKINGS.sort(function(x, y){ return x.id < y.id ? -1 : 1; });
       dropBookedFromSlots();
+      renderBookings();
       render();
     }
     if(!HOOK){
@@ -491,6 +516,103 @@
     SLOTS = SLOTS.filter(function(s){ return !booked[s.id]; });
     renderTrial();
   }
+  // ——— записанные пробные ———
+  var BOOKINGS = [];
+  function bookingFromEvent(e){
+    var d = new Date(e.start.dateTime);
+    var key  = d.toLocaleDateString("ru-RU", {weekday:"short", day:"numeric", month:"long", timeZone:TZ});
+    var full = d.toLocaleDateString("ru-RU", {weekday:"long", day:"numeric", month:"long", timeZone:TZ});
+    var time = d.toLocaleTimeString("ru-RU", {hour:"2-digit", minute:"2-digit", timeZone:TZ});
+    var title = String(e.summary || "").replace(/^\s*пробное\s*:?\s*/i, "");
+    var parts = title.split(" ");
+    var insta = parts.shift() || "";
+    var meet = e.hangoutLink ||
+      (e.conferenceData && e.conferenceData.entryPoints &&
+       (e.conferenceData.entryPoints.filter(function(p){ return p.entryPointType === "video"; })[0] || {}).uri) || "";
+    return {
+      id: e.start.dateTime,
+      day: key.charAt(0).toUpperCase() + key.slice(1),
+      dayFull: dayPhrase(full),
+      dayPlain: full,
+      time: time,
+      insta: insta,
+      klass: parts.join(" "),
+      meet: meet
+    };
+  }
+  function cancelBooking(b){
+    if(!confirmCancel(b)) return;
+    BOOKINGS = BOOKINGS.filter(function(x){ return x.id !== b.id; });
+    delete booked[b.id];
+    saveBooked();
+    // окно снова свободно - возвращаем его в список, не дожидаясь календаря
+    if(!slotById(b.id)){
+      SLOTS.push({id:b.id, day:b.day, dayFull:b.dayFull, dayPlain:b.dayPlain, time:b.time, meet:b.meet});
+      SLOTS.sort(function(x, y){ return x.id < y.id ? -1 : 1; });
+    }
+    delete snapSlots[b.id];
+    if(HOOK){
+      fetch(HOOK, {
+        method: "POST",
+        mode: "no-cors",
+        headers: {"Content-Type": "text/plain;charset=utf-8"},
+        body: JSON.stringify({
+          action: "cancel",
+          start: b.id,
+          insta: b.insta,
+          klass: b.klass,
+          when: b.dayPlain + ", " + b.time
+        })
+      }).catch(function(){});
+    }
+    renderBookings();
+    renderTrial();
+    render();
+  }
+  function confirmCancel(b){
+    return window.confirm("Отменить пробное " + (b.insta ? b.insta + " " : "") +
+      "в " + b.dayPlain + ", " + b.time + "?\n\nОкно вернётся в свободные, событие в календаре снова станет жёлтым.");
+  }
+  function renderBookings(){
+    var box = document.getElementById("bookRows");
+    if(!box) return;
+    box.innerHTML = "";
+    if(!BOOKINGS.length){
+      var p = document.createElement("div");
+      p.className = "row dim";
+      p.innerHTML = "<span>Пока никого не записали</span><span></span>";
+      box.appendChild(p);
+      return;
+    }
+    BOOKINGS.forEach(function(b){
+      var row = document.createElement("div");
+      row.className = "book-item";
+      var who = document.createElement("div");
+      who.className = "book-who";
+      who.textContent = b.insta || "без ника";
+      var when = document.createElement("div");
+      when.className = "book-when";
+      when.textContent = b.dayPlain + ", " + b.time + (b.klass ? " · " + b.klass : "");
+      var foot = document.createElement("div");
+      foot.className = "book-foot";
+      if(b.meet){
+        var a = document.createElement("a");
+        a.href = b.meet; a.target = "_blank"; a.rel = "noopener";
+        a.className = "book-link";
+        a.textContent = "ссылка на встречу";
+        foot.appendChild(a);
+      }
+      var x = document.createElement("button");
+      x.type = "button";
+      x.className = "book-cancel";
+      x.textContent = "отменить";
+      x.addEventListener("click", function(){ cancelBooking(b); });
+      foot.appendChild(x);
+      row.appendChild(who); row.appendChild(when); row.appendChild(foot);
+      box.appendChild(row);
+    });
+  }
+
   function resetClient(){
     picked = [];
     confirmedId = null;
@@ -1495,7 +1617,7 @@
     });
     var note = document.getElementById("dataNote");
     if(note){
-      note.textContent = "Из " + DATA_UPDATED + ". Окна берутся из календаря «Окна для пробного»: удалили слот - он пропадёт и здесь.";
+      note.textContent = "Из " + DATA_UPDATED + ". Окна берутся из календаря «Окна для пробного»: жёлтое событие - свободно, фиолетовое - записано пробное.";
     }
   }
 
@@ -1513,16 +1635,25 @@
       "&timeMin=" + encodeURIComponent(now.toISOString()) +
       "&timeMax=" + encodeURIComponent(till.toISOString());
     fetch(url).then(function(r){ return r.ok ? r.json() : Promise.reject(); }).then(function(data){
-      // берём только свободные окна: занятое событие переименовывается в календаре
-      var items = (data.items || []).filter(function(e){
-        return e.start && e.start.dateTime
-          && /^своб/i.test(String(e.summary || "").replace(/^\s+/, ""))
+      var all = (data.items || []).filter(function(e){ return e && e.start && e.start.dateTime; });
+
+      // записанные пробные: событие переименовано в «Пробное: ник класс»
+      BOOKINGS = all.filter(function(e){
+        return /^пробн/i.test(String(e.summary || "").replace(/^\s+/, ""));
+      }).map(function(e){ return bookingFromEvent(e); });
+      renderBookings();
+
+      // свободные окна
+      var items = all.filter(function(e){
+        return /^своб/i.test(String(e.summary || "").replace(/^\s+/, ""))
           && !booked[e.start.dateTime];
       });
       if(!items.length){
+        SLOTS = [];
         TRIAL = [{day:"Свободных окон нет", slots:"поставьте их в календарь"}];
         DATA_UPDATED = "календаря, только что";
         renderTrial();
+        render();
         return;
       }
       var byDay = {}, order = [];
@@ -1597,6 +1728,7 @@
 
   pruneUsed();
   pruneBooked();
+  renderBookings();
   slotsFromTrial();
   renderSched();
   renderTrial();
