@@ -515,7 +515,18 @@
   }
   function dropBookedFromSlots(){
     SLOTS = SLOTS.filter(function(s){ return !booked[s.id]; });
+    trialFromSlots();
     renderTrial();
+  }
+  // сводка «Окна для пробного» в правой колонке всегда строится из живого списка окон
+  function trialFromSlots(){
+    if(!SLOTS.length) return;
+    var byDay = {}, order = [];
+    SLOTS.forEach(function(s){
+      if(!byDay[s.day]){ byDay[s.day] = []; order.push(s.day); }
+      byDay[s.day].push(s.time);
+    });
+    TRIAL = order.map(function(d){ return {day: d, slots: byDay[d].join(", ")}; });
   }
   // ——— записанные пробные ———
   var BOOKINGS = [];
@@ -561,6 +572,7 @@
       SLOTS.sort(function(x, y){ return x.id < y.id ? -1 : 1; });
     }
     delete snapSlots[b.id];
+    trialFromSlots();
     if(HOOK){
       fetch(HOOK, {
         method: "POST",
@@ -1702,7 +1714,7 @@
       return r.json();
     }).then(function(data){
       if(data && data.groups) DEFAULT_SCHED = data.groups;
-      if(data && data.trial && data.trial.length) TRIAL = data.trial;
+      if(data && data.trial && data.trial.length && !SLOTS.length) TRIAL = data.trial;
       if(data && data.updated) DATA_UPDATED = data.updated;
       if(data && data.meet) MEET_FALLBACK = data.meet;
       if(data && data.hook) HOOK = data.hook;
