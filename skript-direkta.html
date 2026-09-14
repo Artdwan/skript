@@ -260,6 +260,7 @@
 
   /* ——— шпаргалка ——— */
   aside{display:grid;gap:14px;min-width:0}
+  .col-main{display:grid;gap:14px;min-width:0}
   .panel{
     background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
     padding:16px 18px;display:grid;gap:10px;
@@ -289,6 +290,43 @@
   }
   .req{font-family:var(--mono);font-size:13px;line-height:1.6;word-break:break-word}
 
+  /* ——— переключатель «скрипт / справочник» ——— */
+  [hidden]{display:none !important}
+  .viewnav{display:flex;gap:8px;margin-top:14px}
+
+  /* ——— справочник ——— */
+  .ref{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));align-items:start;min-width:0}
+
+  /* ——— календарь ——— */
+  .cal-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .cal-title{font:600 14px/1 var(--sans);text-transform:capitalize}
+  .cal-arrows{display:flex;gap:4px}
+  .cal-arrow{
+    font:600 15px/1 var(--mono);width:26px;height:26px;border-radius:8px;
+    border:1px solid var(--line);background:var(--card);color:var(--ink);cursor:pointer;
+  }
+  .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px}
+  .cal-w{
+    font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;
+    color:var(--muted);text-align:center;padding-bottom:2px;
+  }
+  .cal-c{
+    display:grid;justify-items:center;gap:2px;padding:4px 0 3px;min-height:34px;
+    font:500 13px/1 var(--sans);border:1px solid transparent;border-radius:8px;
+    background:none;color:var(--ink);cursor:pointer;
+  }
+  .cal-c:hover{background:var(--accent-soft)}
+  .cal-off{visibility:hidden}
+  .cal-today{border-color:var(--accent)}
+  .cal-sel{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+  .cal-sel .dot-free{box-shadow:0 0 0 1px var(--accent-ink)}
+  .cal-dots{display:flex;gap:2px;height:6px;align-items:center}
+  .cal-dots .dot{width:5px;height:5px;margin:0}
+  .cal-day{display:grid;gap:3px;font-size:13px}
+  .cal-day-t{font-weight:600;text-transform:capitalize}
+  .cal-line{color:var(--muted)}
+  .cal-line.cal-busy{color:var(--grape)}
+
   .toast{
     position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(8px);
     background:var(--ink);color:var(--paper);padding:10px 16px;border-radius:999px;
@@ -305,12 +343,17 @@
     <div class="eyebrow">АртТич · ответы в Instagram Direct</div>
     <h1>Скрипт Директа</h1>
     <p class="lede">Выберите, что написал клиент — получите готовый текст и следующий шаг. Цены и условия здесь те же, что в справочнике фактов: менять их в переписке нельзя.</p>
+    <div class="viewnav">
+      <button type="button" class="chip" id="viewScript" aria-pressed="true">Скрипт</button>
+      <button type="button" class="chip" id="viewRef" aria-pressed="false">Справочник</button>
+    </div>
   </header>
 
   <div class="layout">
-    <main class="step" id="step" aria-live="polite"></main>
+    <div class="col-main">
+      <main class="step" id="step" aria-live="polite"></main>
 
-    <aside>
+      <section class="ref" id="refView" hidden>
       <div class="panel">
         <h3>Расписание групп</h3>
         <div id="schedView" class="rows"></div>
@@ -322,16 +365,6 @@
           <button type="button" class="chip" id="schedReset" hidden>Вернуть из календаря</button>
         </div>
         <p id="schedNote">По одной группе в строке. Постоянные изменения вносятся в файл skript-data.json рядом со страницей; правка здесь сохраняется только в этом браузере.</p>
-      </div>
-
-      <div class="panel panel-book">
-        <h3>Записанные пробные<span class="book-count" id="bookCount" hidden></span></h3>
-        <div id="bookRows" class="rows"></div>
-        <div class="book-legend">
-          <span><span class="dot dot-busy"></span>записано пробное</span>
-          <span><span class="dot dot-free"></span>окно свободно</span>
-        </div>
-        <p id="bookNote">Те же цвета в календаре. Отмена возвращает окно в свободные и красит событие обратно в жёлтый.</p>
       </div>
 
       <div class="panel">
@@ -350,7 +383,18 @@
           <div class="row"><span>Химия 8, 9, 10</span><span>130 / 65</span></div>
           <div class="row dim"><span>Математика 5, химия 11</span><span>нет данных</span></div>
         </div>
-        <p>Вторая цифра — первый абонемент со скидкой 50%. Индивидуальные: 45 BYN за 45 минут, 60 BYN за 60 минут, скидка 50% на них не действует.</p>
+        <p>Вторая цифра — первый абонемент со скидкой 50%.</p>
+      </div>
+
+      <div class="panel">
+        <h3>Пары и индивидуальные</h3>
+        <div class="rows">
+          <div class="row"><span>Артур, индивидуально 45 мин</span><span>50</span></div>
+          <div class="row"><span>Артур, пара 60 мин, с ученика</span><span>40</span></div>
+          <div class="row"><span>Дарья, индивидуально 45 мин</span><span>40</span></div>
+          <div class="row"><span>Дарья, пара 60 мин, с ученика</span><span>30</span></div>
+        </div>
+        <p>Цена за одно занятие, не за месяц. Скидка 50% на них не действует. Сами не предлагаем: сначала группа, пары и индивидуальные — только после отказа и только если есть свободное место.</p>
       </div>
 
       <div class="panel">
@@ -400,6 +444,34 @@
           </ul>
         </details>
       </div>
+      </section>
+    </div>
+
+    <aside>
+      <div class="panel panel-book">
+        <h3>Записанные пробные<span class="book-count" id="bookCount" hidden></span></h3>
+        <div id="bookRows" class="rows"></div>
+        <p id="bookNote">Отмена возвращает окно в свободные и красит событие в календаре обратно в жёлтый.</p>
+      </div>
+
+      <div class="panel">
+        <div class="cal-head">
+          <h3>Календарь</h3>
+          <div class="cal-arrows">
+            <button type="button" class="cal-arrow" id="calPrev" aria-label="Предыдущий месяц">&lsaquo;</button>
+            <button type="button" class="cal-arrow" id="calNext" aria-label="Следующий месяц">&rsaquo;</button>
+          </div>
+        </div>
+        <div class="cal-title" id="calTitle"></div>
+        <div class="cal-grid" id="calGrid"></div>
+        <div class="cal-day" id="calDay"></div>
+        <div class="book-legend">
+          <span><span class="dot dot-free"></span>свободное окно</span>
+          <span><span class="dot dot-busy"></span>записано пробное</span>
+        </div>
+        <p>Нажмите день — покажу окна и записанных на этот день.</p>
+      </div>
+
     </aside>
   </div>
 </div>
@@ -668,6 +740,118 @@
     renderTrial();
     render();
   }
+  // ——— календарь в правой колонке ———
+  var calMonth = null;   // первое число показываемого месяца
+  var calPick = null;    // выбранное число
+  var WD = ["пн","вт","ср","чт","пт","сб","вс"];
+  function sameMonth(d, y, m){ return d.getFullYear() === y && d.getMonth() === m; }
+  function renderCalendar(){
+    var grid = document.getElementById("calGrid");
+    if(!grid) return;
+    if(!calMonth) calMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+    var y = calMonth.getFullYear(), m = calMonth.getMonth();
+    var t = document.getElementById("calTitle");
+    if(t) t.textContent = calMonth.toLocaleDateString("ru-RU", {month:"long", year:"numeric"}).replace(" г.", "");
+
+    var free = {}, busy = {};
+    SLOTS.forEach(function(s){
+      var ms = Date.parse(s.id);
+      if(isNaN(ms)) return;
+      var d = new Date(ms);
+      if(sameMonth(d, y, m)){ (free[d.getDate()] = free[d.getDate()] || []).push(s.time); }
+    });
+    BOOKINGS.forEach(function(b){
+      var ms = Date.parse(b.id);
+      if(isNaN(ms)) return;
+      var d = new Date(ms);
+      if(sameMonth(d, y, m)){ (busy[d.getDate()] = busy[d.getDate()] || []).push(b); }
+    });
+
+    grid.innerHTML = "";
+    WD.forEach(function(w){
+      var c = document.createElement("div");
+      c.className = "cal-w"; c.textContent = w;
+      grid.appendChild(c);
+    });
+    var lead = (new Date(y, m, 1).getDay() + 6) % 7;
+    for(var i = 0; i < lead; i++){
+      var e = document.createElement("div");
+      e.className = "cal-c cal-off";
+      grid.appendChild(e);
+    }
+    var days = new Date(y, m + 1, 0).getDate();
+    var now = new Date();
+    for(var dd = 1; dd <= days; dd++){
+      (function(num){
+        var c = document.createElement("button");
+        c.type = "button";
+        c.className = "cal-c"
+          + (sameMonth(now, y, m) && now.getDate() === num ? " cal-today" : "")
+          + (calPick === num ? " cal-sel" : "");
+        var n = document.createElement("span");
+        n.textContent = num;
+        c.appendChild(n);
+        var dots = document.createElement("span");
+        dots.className = "cal-dots";
+        if(free[num]){ var f = document.createElement("span"); f.className = "dot dot-free"; dots.appendChild(f); }
+        if(busy[num]){ var b2 = document.createElement("span"); b2.className = "dot dot-busy"; dots.appendChild(b2); }
+        c.appendChild(dots);
+        c.addEventListener("click", function(){
+          calPick = (calPick === num) ? null : num;
+          renderCalendar();
+        });
+        grid.appendChild(c);
+      })(dd);
+    }
+
+    var box = document.getElementById("calDay");
+    if(!box) return;
+    box.innerHTML = "";
+    if(!calPick) return;
+    var head = document.createElement("div");
+    head.className = "cal-day-t";
+    head.textContent = new Date(y, m, calPick).toLocaleDateString("ru-RU", {weekday:"long", day:"numeric", month:"long"});
+    box.appendChild(head);
+    (busy[calPick] || []).forEach(function(b){
+      var r = document.createElement("div");
+      r.className = "cal-line cal-busy";
+      r.textContent = b.time + " · " + (b.insta || "пробное") + (b.klass ? " · " + b.klass : "");
+      box.appendChild(r);
+    });
+    if((free[calPick] || []).length){
+      var r2 = document.createElement("div");
+      r2.className = "cal-line";
+      r2.textContent = "свободно: " + free[calPick].join(", ");
+      box.appendChild(r2);
+    }
+    if(!(busy[calPick] || []).length && !(free[calPick] || []).length){
+      var r3 = document.createElement("div");
+      r3.className = "cal-line";
+      r3.textContent = "в этот день ничего нет";
+      box.appendChild(r3);
+    }
+  }
+  function shiftMonth(step){
+    if(!calMonth) calMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+    calMonth = new Date(calMonth.getFullYear(), calMonth.getMonth() + step, 1);
+    calPick = null;
+    renderCalendar();
+  }
+
+  // ——— скрипт или справочник ———
+  function setView(v){
+    var isRef = v === "ref";
+    var st = document.getElementById("step");
+    var rf = document.getElementById("refView");
+    if(st) st.hidden = isRef;
+    if(rf) rf.hidden = !isRef;
+    var a = document.getElementById("viewScript");
+    var b = document.getElementById("viewRef");
+    if(a) a.setAttribute("aria-pressed", isRef ? "false" : "true");
+    if(b) b.setAttribute("aria-pressed", isRef ? "true" : "false");
+    window.scrollTo({top:0, behavior:"smooth"});
+  }
+
   function renderBookings(){
     var box = document.getElementById("bookRows");
     if(!box) return;
@@ -745,6 +929,7 @@
       }
       box.appendChild(row);
     });
+    renderCalendar();
   }
 
   function resetClient(){
@@ -1760,6 +1945,7 @@
     if(note){
       note.textContent = "Из " + DATA_UPDATED + ". Окна берутся из календаря «Окна для пробного»: жёлтое событие - свободно, фиолетовое - записано пробное.";
     }
+    renderCalendar();
   }
 
   // живые окна для пробного из публичного календаря «Окна для пробного»
@@ -1867,8 +2053,18 @@
     if(stale){ pruneUsed(); render(); }
   }, 20000);
 
+  var calP = document.getElementById("calPrev");
+  var calN = document.getElementById("calNext");
+  if(calP) calP.addEventListener("click", function(){ shiftMonth(-1); });
+  if(calN) calN.addEventListener("click", function(){ shiftMonth(1); });
+  var vS = document.getElementById("viewScript");
+  var vR = document.getElementById("viewRef");
+  if(vS) vS.addEventListener("click", function(){ setView("script"); });
+  if(vR) vR.addEventListener("click", function(){ setView("ref"); });
+
   pruneUsed();
   pruneBooked();
+  renderCalendar();
   renderBookings();
   slotsFromTrial();
   renderSched();
