@@ -114,7 +114,7 @@
   var key = "";
   try{ key = localStorage.getItem(KEY_STORE) || ""; }catch(e){ key = ""; }
 
-  var DATA = {"Лиды":[], "Ученики":[], "Оплаты":[], "Задачи":[]};
+  var DATA = {"Лиды":[], "Группы":[], "Ученики":[], "Оплаты":[], "Задачи":[]};
   var CAL = [];
   var tab = "today";
   var busy = false;
@@ -231,6 +231,7 @@
   var TABS = [
     {id:"today",  name:"Сегодня"},
     {id:"leads",  name:"Лиды"},
+    {id:"groups", name:"Группы"},
     {id:"pupils", name:"Ученики"},
     {id:"pay",    name:"Оплаты"},
     {id:"cal",    name:"Календарь"}
@@ -264,6 +265,7 @@
 
     if(tab === "today")  renderToday(w);
     if(tab === "leads")  renderLeads(w);
+    if(tab === "groups") renderGroups(w);
     if(tab === "pupils") renderPupils(w);
     if(tab === "pay")    renderPay(w);
     if(tab === "cal")    renderCal(w);
@@ -274,6 +276,7 @@
   function countFor(id){
     if(id === "today")  return openTasks().length || null;
     if(id === "leads")  return DATA["Лиды"].length || null;
+    if(id === "groups") return DATA["Группы"].length || null;
     if(id === "pupils") return DATA["Ученики"].filter(function(p){ return p["статус"] !== "ушёл"; }).length || null;
     if(id === "pay")    return null;
     if(id === "cal")    return CAL.filter(function(c){ return !c.free; }).length || null;
@@ -441,27 +444,112 @@
     w.appendChild(t);
   }
 
+  /* ——— Группы ——— */
+
+  function pupilsOf(name){
+    return DATA["Ученики"].filter(function(p){
+      return String(p["группа"]).indexOf(name) >= 0 && p["статус"] !== "ушёл";
+    });
+  }
+
+  function renderGroups(w){
+    var bySubj = {};
+    DATA["Группы"].forEach(function(g){
+      var s = g["предмет"] || "прочее";
+      if(!bySubj[s]) bySubj[s] = [];
+      bySubj[s].push(g);
+    });
+    Object.keys(bySubj).forEach(function(subj){
+      var p = el("div","panel");
+      p.appendChild(el("h3", null, subj));
+      bySubj[subj].sort(function(a,b){ return Number(a["класс"]) - Number(b["класс"]); })
+        .forEach(function(g){
+          var r = el("div"); r.style.padding = "10px 0"; r.style.borderTop = "1px solid var(--line)";
+          var line = el("div"); line.style.display = "flex"; line.style.gap = "10px";
+          line.style.flexWrap = "wrap"; line.style.alignItems = "baseline";
+          var nm = el("strong", null, g["название"]);
+          var cl = el("span","muted", g["класс"] + " класс");
+          cl.style.fontSize = "13px";
+          var pl = pupilsOf(g["название"]);
+          var cnt = el("span", pl.length ? "pill" : "pill pill-warn", pl.length + " из 7");
+          line.appendChild(nm); line.appendChild(cl); line.appendChild(cnt);
+          r.appendChild(line);
+          var days = el("div","muted", g["дни"]);
+          days.style.fontSize = "13px"; days.style.fontFamily = "var(--mono)";
+          r.appendChild(days);
+          if(pl.length){
+            var names = el("div", null, pl.map(function(x){ return x["ученик"]; }).join(", "));
+            names.style.fontSize = "13.5px"; names.style.marginTop = "3px";
+            r.appendChild(names);
+          }
+          if(g["заметка"]){
+            var nt = el("div","muted", g["заметка"]); nt.style.fontSize = "12.5px";
+            r.appendChild(nt);
+          }
+          p.appendChild(r);
+        });
+      w.appendChild(p);
+    });
+
+    var loose = DATA["Ученики"].filter(function(p){
+      return !DATA["Группы"].some(function(g){ return String(p["группа"]).indexOf(g["название"]) >= 0; });
+    });
+    if(loose.length){
+      var lp = el("div","panel");
+      lp.appendChild(el("h3", null, "Без группы"));
+      loose.forEach(function(p){
+        var r = el("div"); r.style.padding = "7px 0"; r.style.borderTop = "1px solid var(--line)";
+        r.appendChild(el("strong", null, p["ученик"]));
+        var m = el("span","muted", "  " + p["класс"] + " класс, " + p["предмет"] + " — " + (p["группа"] || "не указана"));
+        m.style.fontSize = "13px";
+        r.appendChild(m);
+        lp.appendChild(r);
+      });
+      w.appendChild(lp);
+    }
+  }
+
   /* ——— Ученики ——— */
+
+  function paidBy(name){
+    return DATA["Оплаты"].filter(function(o){ return o["ученик"] === name; })
+      .reduce(function(a, o){ return a + (parseFloat(String(o["сумма"]).replace(",", ".")) || 0); }, 0);
+  }
 
   function renderPupils(w){
     var t = el("div","panel");
     t.appendChild(el("h3", null, "Ученики"));
-    var rows = DATA["Ученики"];
+    var rows = DATA["Ученики"].slice().sort(function(a,b){
+      return Number(a["класс"]) - Number(b["класс"]) || String(a["ученик"]).localeCompare(String(b["ученик"]));
+    });
     if(!rows.length){ t.appendChild(el("p","empty","Пока пусто.")); w.appendChild(t); return; }
     var tw = el("div","tbl-wrap");
     var tb = document.createElement("table");
-    tb.appendChild(head(["Ученик","Класс","Предмет","Формат","Группа","Discord","Holst","Статус"]));
+    tb.appendChild(head(["Ученик","Кл","Предмет","Формат","Группа","Абонемент","Оплачено","Родитель","Discord","Holst"]));
     var body = document.createElement("tbody");
     rows.forEach(function(row){
       var tr = document.createElement("tr");
-      tr.appendChild(el("td", null, row["ученик"]));
-      tr.appendChild(el("td", null, row["класс"]));
+      var nm = el("td");
+      nm.appendChild(el("strong", null, row["ученик"]));
+      if(row["заметка"]){
+        var z = el("div","muted", row["заметка"]); z.style.fontSize = "12px"; nm.appendChild(z);
+      }
+      tr.appendChild(nm);
+      tr.appendChild(el("td","muted", row["класс"]));
       tr.appendChild(el("td","muted", row["предмет"]));
       tr.appendChild(el("td", null, row["формат"]));
       tr.appendChild(el("td","muted", row["группа"]));
+      var ab = el("td");
+      var unit = row["формат"] === "группа" ? " в месяц" : " за занятие";
+      ab.appendChild(el("span","pill", row["абонемент"] + unit));
+      tr.appendChild(ab);
+      var pd = el("td");
+      var sum = paidBy(row["ученик"]);
+      pd.appendChild(el("span", sum ? "pill" : "pill pill-warn", sum ? String(sum) : "нет оплат"));
+      tr.appendChild(pd);
+      tr.appendChild(el("td","muted", row["родитель"]));
       tr.appendChild(mark(row["discord"]));
       tr.appendChild(mark(row["holst"]));
-      tr.appendChild(el("td","muted", row["статус"]));
       body.appendChild(tr);
     });
     tb.appendChild(body); tw.appendChild(tb); t.appendChild(tw);
