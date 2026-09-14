@@ -208,6 +208,21 @@
     color:var(--warn);text-decoration:underline;cursor:pointer;
   }
   .book-cancel-armed{font-weight:700;text-decoration:none}
+  .book-contact{font-size:12.5px;color:var(--ink)}
+  .book-edit{
+    font:inherit;font-size:12px;background:none;border:0;padding:0;
+    color:var(--grape);text-decoration:underline;cursor:pointer;
+  }
+  .book-cform{display:flex;gap:6px;margin-top:4px}
+  .book-cinput{
+    flex:1 1 auto;min-width:0;font:400 13px/1.3 var(--sans);
+    padding:6px 9px;border:1px solid var(--line);border-radius:8px;
+    background:var(--card);color:var(--ink);
+  }
+  .book-csave{
+    font:600 12px/1 var(--sans);padding:6px 10px;border-radius:8px;
+    border:1px solid var(--grape);background:var(--grape);color:var(--card);cursor:pointer;
+  }
   .book-row{display:flex;gap:8px;flex-wrap:wrap}
   .book-input{
     flex:1 1 240px;min-width:0;font:400 14px/1.3 var(--sans);
@@ -439,6 +454,33 @@
   try{ booked = JSON.parse(localStorage.getItem(BOOKED_KEY) || "{}") || {}; }catch(e){ booked = {}; }
   function saveBooked(){ try{ localStorage.setItem(BOOKED_KEY, JSON.stringify(booked)); }catch(e){} }
 
+  // телефон, почта или телеграм клиента - вписывается прямо на карточке записанного пробного
+  var CONTACT_KEY = "arttich-contacts-v1";
+  var contacts = {};
+  try{ contacts = JSON.parse(localStorage.getItem(CONTACT_KEY) || "{}") || {}; }catch(e){ contacts = {}; }
+  function saveContacts(){ try{ localStorage.setItem(CONTACT_KEY, JSON.stringify(contacts)); }catch(e){} }
+  var editContact = null;      // id карточки, у которой открыто поле
+  function setContact(b, val){
+    val = String(val || "").trim();
+    if(val) contacts[b.id] = val; else delete contacts[b.id];
+    saveContacts();
+    editContact = null;
+    renderBookings();
+    if(val && HOOK){
+      fetch(HOOK, {
+        method: "POST",
+        mode: "no-cors",
+        headers: {"Content-Type": "text/plain;charset=utf-8"},
+        body: JSON.stringify({
+          text: "Контакт для пробного\n" +
+                "Instagram: " + (b.insta || "-") + "\n" +
+                "Когда: " + b.dayPlain + ", " + b.time + "\n" +
+                "Контакт: " + val
+        })
+      }).catch(function(){});
+    }
+  }
+
   function pruneUsed(){
     var now = Date.now(), changed = false;
     Object.keys(used).forEach(function(k){
@@ -598,6 +640,9 @@
     BOOKINGS = BOOKINGS.filter(function(x){ return x.id !== b.id; });
     delete booked[b.id];
     saveBooked();
+    delete contacts[b.id];
+    saveContacts();
+    if(editContact === b.id) editContact = null;
     // окно снова свободно - возвращаем его в список, не дожидаясь календаря
     if(!slotById(b.id)){
       SLOTS.push({id:b.id, day:b.day, dayFull:b.dayFull, dayPlain:b.dayPlain, time:b.time, meet:b.meet});
@@ -657,13 +702,47 @@
         a.textContent = "ссылка на встречу";
         foot.appendChild(a);
       }
+      var ce = document.createElement("button");
+      ce.type = "button";
+      ce.className = "book-edit";
+      ce.textContent = contacts[b.id] ? "изменить контакт" : "добавить контакт";
+      ce.addEventListener("click", function(){
+        editContact = (editContact === b.id) ? null : b.id;
+        renderBookings();
+      });
+      foot.appendChild(ce);
       var x = document.createElement("button");
       x.type = "button";
       x.className = "book-cancel" + (pendingCancel === b.id ? " book-cancel-armed" : "");
       x.textContent = pendingCancel === b.id ? "точно отменить?" : "отменить";
       x.addEventListener("click", function(){ askCancel(b); });
       foot.appendChild(x);
-      row.appendChild(who); row.appendChild(when); row.appendChild(foot);
+      row.appendChild(who); row.appendChild(when);
+      if(contacts[b.id]){
+        var ct = document.createElement("div");
+        ct.className = "book-contact";
+        ct.textContent = "Связь: " + contacts[b.id];
+        row.appendChild(ct);
+      }
+      row.appendChild(foot);
+      if(editContact === b.id){
+        var form = document.createElement("div");
+        form.className = "book-cform";
+        var inp = document.createElement("input");
+        inp.type = "text";
+        inp.className = "book-cinput";
+        inp.placeholder = "телефон, почта или телеграм";
+        inp.value = contacts[b.id] || "";
+        var ok = document.createElement("button");
+        ok.type = "button";
+        ok.className = "book-csave";
+        ok.textContent = "сохранить";
+        ok.addEventListener("click", function(){ setContact(b, inp.value); });
+        inp.addEventListener("keydown", function(ev){ if(ev.key === "Enter") setContact(b, inp.value); });
+        form.appendChild(inp); form.appendChild(ok);
+        row.appendChild(form);
+        setTimeout(function(){ inp.focus(); }, 0);
+      }
       box.appendChild(row);
     });
   }
@@ -976,12 +1055,8 @@
         "Записал вас на {{деньКна}}, в {{времяК}}.\n\nЗанятие в Google Meet - просто перейдёте по ссылке, ничего устанавливать не нужно, подойдёт и компьютер, и телефон.\n\nСсылку отправлю следующим сообщением. Куда её продублировать, чтобы точно не потерялась - в Telegram, Viber или на почту?",
         "{{ссылка}}"
       ],
-      next:[
-        {t:"Накануне занятия", to:"remindEve"},
-        {t:"За 15 минут до начала", to:"link"},
-        {t:"Просит перенести", to:"move"},
-        {t:"Не пришёл и не предупредил", to:"noShow"}
-      ]
+      note:"Если клиент прислал телефон, почту или телеграм - нажмите «добавить контакт» на его карточке в «Записанных пробных» справа и впишите туда. Контакт сохранится у записи и сразу уйдёт в бот.",
+      next:[]
     },
 
     remindEve:{
