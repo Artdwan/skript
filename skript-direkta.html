@@ -179,6 +179,7 @@
     font:inherit;font-size:12px;background:none;border:0;padding:0;
     color:var(--warn);text-decoration:underline;cursor:pointer;
   }
+  .book-cancel-armed{font-weight:700;text-decoration:none}
   .book-row{display:flex;gap:8px;flex-wrap:wrap}
   .book-input{
     flex:1 1 240px;min-width:0;font:400 14px/1.3 var(--sans);
@@ -540,8 +541,17 @@
       meet: meet
     };
   }
+  var pendingCancel = null;
+  function askCancel(b){
+    if(pendingCancel === b.id){ cancelBooking(b); return; }
+    pendingCancel = b.id;
+    renderBookings();
+    setTimeout(function(){
+      if(pendingCancel === b.id){ pendingCancel = null; renderBookings(); }
+    }, 5000);
+  }
   function cancelBooking(b){
-    if(!confirmCancel(b)) return;
+    pendingCancel = null;
     BOOKINGS = BOOKINGS.filter(function(x){ return x.id !== b.id; });
     delete booked[b.id];
     saveBooked();
@@ -568,10 +578,6 @@
     renderBookings();
     renderTrial();
     render();
-  }
-  function confirmCancel(b){
-    return window.confirm("Отменить пробное " + (b.insta ? b.insta + " " : "") +
-      "в " + b.dayPlain + ", " + b.time + "?\n\nОкно вернётся в свободные, событие в календаре снова станет жёлтым.");
   }
   function renderBookings(){
     var box = document.getElementById("bookRows");
@@ -604,9 +610,9 @@
       }
       var x = document.createElement("button");
       x.type = "button";
-      x.className = "book-cancel";
-      x.textContent = "отменить";
-      x.addEventListener("click", function(){ cancelBooking(b); });
+      x.className = "book-cancel" + (pendingCancel === b.id ? " book-cancel-armed" : "");
+      x.textContent = pendingCancel === b.id ? "точно отменить?" : "отменить";
+      x.addEventListener("click", function(){ askCancel(b); });
       foot.appendChild(x);
       row.appendChild(who); row.appendChild(when); row.appendChild(foot);
       box.appendChild(row);
