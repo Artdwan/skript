@@ -1,0 +1,586 @@
+<title>АртТич · Кабинет</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Commissioner:wght@500;600;700&family=Golos+Text:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+  :root{
+    --paper:#F6F6F2; --card:#FFFFFF; --ink:#151C17; --muted:#5D6B60; --line:#DDE3DA;
+    --accent:#2F6B4F; --accent-ink:#FFFFFF; --accent-soft:#E7F0E9;
+    --warn:#9A5B14; --warn-soft:#FBEEDC;
+    --grape:#6A4C9C; --grape-soft:#EFE9F8; --banana:#B8860B;
+    --shadow:0 1px 2px rgba(21,28,23,.06), 0 8px 24px rgba(21,28,23,.05);
+    --radius:14px;
+    --sans:"Golos Text","Segoe UI",system-ui,sans-serif;
+    --display:"Commissioner","Golos Text",system-ui,sans-serif;
+    --mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --paper:#11140F; --card:#171B15; --ink:#E9EEE6; --muted:#9AA79C; --line:#2A3128;
+      --accent:#74C08C; --accent-ink:#10160F; --accent-soft:#1D2A20;
+      --warn:#E2A961; --warn-soft:#2B2114;
+      --grape:#B69BE8; --grape-soft:#241E33; --banana:#E0B84A;
+      --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 26px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="dark"]{
+    --paper:#11140F; --card:#171B15; --ink:#E9EEE6; --muted:#9AA79C; --line:#2A3128;
+    --accent:#74C08C; --accent-ink:#10160F; --accent-soft:#1D2A20;
+    --warn:#E2A961; --warn-soft:#2B2114;
+    --grape:#B69BE8; --grape-soft:#241E33; --banana:#E0B84A;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 26px rgba(0,0,0,.35);
+  }
+
+  *{box-sizing:border-box}
+  body{background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:16px;line-height:1.5;margin:0}
+  .wrap{max-width:1180px;margin:0 auto;padding:28px 18px 64px}
+  .eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}
+  h1{font-family:var(--display);font-size:clamp(26px,4vw,38px);line-height:1.08;margin:6px 0 4px}
+  .lede{color:var(--muted);margin:0 0 22px;max-width:62ch}
+
+  /* вход */
+  .gate{max-width:460px;margin:14vh auto;background:var(--card);border:1px solid var(--line);
+        border-radius:var(--radius);box-shadow:var(--shadow);padding:26px 24px;display:grid;gap:14px}
+  .gate h2{font-family:var(--display);font-size:22px;margin:0}
+  .gate p{margin:0;color:var(--muted);font-size:14px}
+  input[type=text],input[type=password],input[type=date],input[type=number],select,textarea{
+    width:100%;font:400 15px/1.35 var(--sans);padding:11px 13px;border:1px solid var(--line);
+    border-radius:10px;background:var(--card);color:var(--ink)}
+  input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-offset:1px}
+  .btn{font:600 14px/1 var(--sans);padding:11px 16px;border-radius:10px;border:1px solid var(--accent);
+       background:var(--accent);color:var(--accent-ink);cursor:pointer}
+  .btn:disabled{opacity:.45;cursor:default}
+  .btn-ghost{background:none;color:var(--ink);border-color:var(--line)}
+  .btn-sm{font-size:13px;padding:8px 12px}
+
+  /* вкладки */
+  nav.tabs{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 18px}
+  .tab{font:600 14px/1 var(--sans);padding:10px 14px;border-radius:999px;border:1px solid var(--line);
+       background:var(--card);color:var(--ink);cursor:pointer}
+  .tab[aria-selected="true"]{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+  .tab .n{font-family:var(--mono);font-size:11px;opacity:.75;margin-left:6px}
+
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
+         box-shadow:var(--shadow);padding:18px;margin-bottom:16px}
+  .panel h3{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;
+            color:var(--muted);margin:0 0 12px;font-weight:500}
+
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th{text-align:left;font:500 11px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;
+     color:var(--muted);padding:0 10px 8px 0;white-space:nowrap}
+  td{padding:9px 10px 9px 0;border-top:1px solid var(--line);vertical-align:top}
+  tr:hover td{background:var(--accent-soft)}
+  .tbl-wrap{overflow-x:auto}
+
+  .pill{display:inline-block;font:500 12px/1 var(--sans);padding:5px 9px;border-radius:999px;
+        background:var(--accent-soft);color:var(--ink);white-space:nowrap}
+  .pill-warn{background:var(--warn-soft);color:var(--warn)}
+  .pill-grape{background:var(--grape-soft);color:var(--grape)}
+  .muted{color:var(--muted)}
+  .row-actions{display:flex;gap:8px;flex-wrap:wrap}
+  .link{background:none;border:0;padding:0;font:inherit;font-size:13px;color:var(--accent);
+        text-decoration:underline;cursor:pointer}
+  .link-warn{color:var(--warn)}
+
+  .funnel{display:flex;gap:8px;flex-wrap:wrap}
+  .step{flex:1 1 120px;background:var(--accent-soft);border-radius:10px;padding:12px}
+  .step .k{font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+  .step .v{font-family:var(--display);font-size:24px;font-weight:600}
+
+  .form{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));align-items:end}
+  .form label{display:grid;gap:4px;font-size:12.5px;color:var(--muted)}
+  .toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:var(--ink);
+         color:var(--paper);padding:11px 16px;border-radius:999px;font-size:14px;opacity:0;
+         transition:opacity .2s;pointer-events:none;z-index:50}
+  .toast.on{opacity:1}
+  .empty{color:var(--muted);font-size:14px}
+</style>
+
+<div id="app"></div>
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+  "use strict";
+
+  var HOOK = "https://script.google.com/macros/s/AKfycbw1vjhO0JHHthjVSKltxRDmn7K8-iVC12hIaVpLloN_oV4xS-Fpax8Nwo2tb0wDPSW2/exec";
+  var CAL_ID = "b43eb3d7776bfcea6809d656966accc9e36cc6cdcf0ea8b0c5b093a514086e67@group.calendar.google.com";
+  var CAL_KEY = "AIzaSyD5lIW-GkzisYTUVQEbi8iS2x7UiIk8SRs";
+  var TZ = "Europe/Minsk";
+  var KEY_STORE = "arttich-admin-key";
+
+  var STATUSES = ["новый","ответил","пробное назначено","пробное состоялось","оплатил","отказ","молчит"];
+
+  var key = "";
+  try{ key = localStorage.getItem(KEY_STORE) || ""; }catch(e){ key = ""; }
+
+  var DATA = {"Лиды":[], "Ученики":[], "Оплаты":[], "Задачи":[]};
+  var CAL = [];
+  var tab = "today";
+  var busy = false;
+
+  var app = document.getElementById("app");
+
+  function toast(msg){
+    var t = document.getElementById("toast");
+    t.textContent = msg; t.classList.add("on");
+    setTimeout(function(){ t.classList.remove("on"); }, 2200);
+  }
+  function el(tag, cls, txt){
+    var e = document.createElement(tag);
+    if(cls) e.className = cls;
+    if(txt !== undefined && txt !== null) e.textContent = txt;
+    return e;
+  }
+  function today(){ return new Date().toISOString().slice(0,10); }
+  function fmtDay(iso){
+    if(!iso) return "";
+    var d = new Date(iso);
+    if(isNaN(d)) return iso;
+    return d.toLocaleDateString("ru-RU", {weekday:"short", day:"numeric", month:"long", timeZone:TZ});
+  }
+
+  /* ——— обмен с посредником ——— */
+
+  function load(){
+    if(!key) return Promise.resolve(false);
+    return fetch(HOOK + "?action=data&k=" + encodeURIComponent(key))
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        if(!d.ok) throw new Error(d.error || "не приняло ключ");
+        Object.keys(DATA).forEach(function(n){ DATA[n] = d.sheets[n] || []; });
+        return true;
+      });
+  }
+  function send(op, sheet, payload){
+    if(busy) return Promise.resolve();
+    busy = true;
+    var body = {action:"admin", k:key, op:op, sheet:sheet};
+    if(payload.id) body.id = payload.id;
+    if(payload.row) body.row = payload.row;
+    if(payload.rows) body.rows = payload.rows;
+    return fetch(HOOK, {
+      method:"POST",
+      headers:{"Content-Type":"text/plain;charset=utf-8"},
+      body: JSON.stringify(body)
+    }).then(function(r){ return r.json(); })
+      .then(function(res){
+        busy = false;
+        if(!res.ok) throw new Error(res.error || "не записалось");
+        return res;
+      })
+      .catch(function(err){ busy = false; throw err; });
+  }
+  function afterWrite(msg){
+    return load().then(function(){ render(); toast(msg); })
+                 .catch(function(e){ toast("Ошибка: " + e.message); });
+  }
+
+  function loadCalendar(){
+    var now = new Date();
+    var till = new Date(now.getTime() + 21*24*3600*1000);
+    var u = "https://www.googleapis.com/calendar/v3/calendars/" + encodeURIComponent(CAL_ID) +
+      "/events?key=" + CAL_KEY + "&singleEvents=true&orderBy=startTime&maxResults=150" +
+      "&timeMin=" + encodeURIComponent(now.toISOString()) +
+      "&timeMax=" + encodeURIComponent(till.toISOString());
+    return fetch(u).then(function(r){ return r.ok ? r.json() : Promise.reject(); })
+      .then(function(d){
+        CAL = (d.items || []).filter(function(e){ return e.start && e.start.dateTime; })
+          .map(function(e){
+            var dt = new Date(e.start.dateTime);
+            return {
+              title: String(e.summary || ""),
+              when: dt.toLocaleDateString("ru-RU",{weekday:"short",day:"numeric",month:"long",timeZone:TZ}) +
+                    ", " + dt.toLocaleTimeString("ru-RU",{hour:"2-digit",minute:"2-digit",timeZone:TZ}),
+              iso: e.start.dateTime,
+              meet: e.hangoutLink || "",
+              free: /^\s*своб/i.test(String(e.summary || ""))
+            };
+          });
+      }).catch(function(){ CAL = []; });
+  }
+
+  /* ——— экран входа ——— */
+
+  function renderGate(err){
+    app.innerHTML = "";
+    var g = el("div","gate");
+    g.appendChild(el("h2", null, "АртТич · Кабинет"));
+    g.appendChild(el("p", null, "Введите ключ доступа. Он сохранится в этом браузере, спрашивать больше не буду."));
+    var inp = document.createElement("input");
+    inp.type = "password"; inp.placeholder = "ключ"; inp.autocomplete = "off";
+    g.appendChild(inp);
+    if(err) { var e2 = el("p", null, err); e2.style.color = "var(--warn)"; g.appendChild(e2); }
+    var b = el("button","btn","Войти");
+    function go(){
+      var v = inp.value.trim();
+      if(!v) return;
+      key = v;
+      try{ localStorage.setItem(KEY_STORE, key); }catch(e){}
+      boot();
+    }
+    b.addEventListener("click", go);
+    inp.addEventListener("keydown", function(ev){ if(ev.key === "Enter") go(); });
+    g.appendChild(b);
+    app.appendChild(g);
+    inp.focus();
+  }
+
+  /* ——— вкладки ——— */
+
+  var TABS = [
+    {id:"today",  name:"Сегодня"},
+    {id:"leads",  name:"Лиды"},
+    {id:"pupils", name:"Ученики"},
+    {id:"pay",    name:"Оплаты"},
+    {id:"cal",    name:"Календарь"}
+  ];
+
+  function render(){
+    app.innerHTML = "";
+    var w = el("div","wrap");
+
+    w.appendChild(el("div","eyebrow","АртТич · внутренний кабинет"));
+    var h = el("h1", null, "Кабинет");
+    w.appendChild(h);
+    w.appendChild(el("p","lede","Лиды, ученики, оплаты и задачи. Данные лежат в вашей таблице, страница только показывает их."));
+
+    var nav = el("nav","tabs");
+    TABS.forEach(function(t){
+      var b = el("button","tab");
+      b.appendChild(document.createTextNode(t.name));
+      var n = countFor(t.id);
+      if(n !== null){ var s = el("span","n", n); b.appendChild(s); }
+      b.setAttribute("aria-selected", tab === t.id ? "true" : "false");
+      b.addEventListener("click", function(){ tab = t.id; render(); });
+      nav.appendChild(b);
+    });
+    var rb = el("button","tab","Обновить");
+    rb.addEventListener("click", function(){
+      Promise.all([load(), loadCalendar()]).then(function(){ render(); toast("Обновлено"); });
+    });
+    nav.appendChild(rb);
+    w.appendChild(nav);
+
+    if(tab === "today")  renderToday(w);
+    if(tab === "leads")  renderLeads(w);
+    if(tab === "pupils") renderPupils(w);
+    if(tab === "pay")    renderPay(w);
+    if(tab === "cal")    renderCal(w);
+
+    app.appendChild(w);
+  }
+
+  function countFor(id){
+    if(id === "today")  return openTasks().length || null;
+    if(id === "leads")  return DATA["Лиды"].length || null;
+    if(id === "pupils") return DATA["Ученики"].filter(function(p){ return p["статус"] !== "ушёл"; }).length || null;
+    if(id === "pay")    return null;
+    if(id === "cal")    return CAL.filter(function(c){ return !c.free; }).length || null;
+    return null;
+  }
+
+  function openTasks(){
+    return DATA["Задачи"].filter(function(t){ return String(t["сделано"]).toLowerCase() !== "да"; });
+  }
+
+  /* ——— Сегодня ——— */
+
+  function renderToday(w){
+    var p = el("div","panel");
+    p.appendChild(el("h3", null, "Воронка"));
+    var f = el("div","funnel");
+    STATUSES.slice(0,5).forEach(function(s){
+      var n = DATA["Лиды"].filter(function(l){ return l["статус"] === s; }).length;
+      var c = el("div","step");
+      c.appendChild(el("div","k", s));
+      c.appendChild(el("div","v", String(n)));
+      f.appendChild(c);
+    });
+    p.appendChild(f);
+    w.appendChild(p);
+
+    var t = el("div","panel");
+    t.appendChild(el("h3", null, "Задачи"));
+    var form = el("div","form");
+    var what = document.createElement("input"); what.type="text"; what.placeholder="что сделать";
+    var who  = document.createElement("input"); who.type="text";  who.placeholder="к кому относится";
+    var due  = document.createElement("input"); due.type="date";  due.value = today();
+    var l1 = el("label"); l1.appendChild(el("span",null,"Задача")); l1.appendChild(what);
+    var l2 = el("label"); l2.appendChild(el("span",null,"Кого касается")); l2.appendChild(who);
+    var l3 = el("label"); l3.appendChild(el("span",null,"Срок")); l3.appendChild(due);
+    var add = el("button","btn","Добавить");
+    add.addEventListener("click", function(){
+      if(!what.value.trim()) return;
+      send("add","Задачи",{row:{"создана":today(),"что":what.value.trim(),"кого":who.value.trim(),"срок":due.value,"кто":"Артур","сделано":"нет"}})
+        .then(function(){ return afterWrite("Задача добавлена"); })
+        .catch(function(e){ toast("Ошибка: " + e.message); });
+    });
+    form.appendChild(l1); form.appendChild(l2); form.appendChild(l3); form.appendChild(add);
+    t.appendChild(form);
+
+    var list = openTasks().sort(function(a,b){ return String(a["срок"]).localeCompare(String(b["срок"])); });
+    if(!list.length){
+      var e = el("p","empty","Открытых задач нет.");
+      e.style.marginTop = "14px";
+      t.appendChild(e);
+    } else {
+      var tw = el("div","tbl-wrap"); tw.style.marginTop = "14px";
+      var tb = document.createElement("table");
+      tb.appendChild(head(["Срок","Что","Кого","",""]));
+      var body = document.createElement("tbody");
+      list.forEach(function(row){
+        var tr = document.createElement("tr");
+        var overdue = row["срок"] && row["срок"] < today();
+        var d = el("td");
+        var pill = el("span", overdue ? "pill pill-warn" : "pill", row["срок"] || "без срока");
+        d.appendChild(pill); tr.appendChild(d);
+        tr.appendChild(el("td", null, row["что"]));
+        tr.appendChild(el("td","muted", row["кого"]));
+        var a = el("td");
+        var done = el("button","link","готово");
+        done.addEventListener("click", function(){
+          send("update","Задачи",{id:row.id, row:{"сделано":"да"}})
+            .then(function(){ return afterWrite("Отмечено"); })
+            .catch(function(e2){ toast("Ошибка: " + e2.message); });
+        });
+        a.appendChild(done); tr.appendChild(a);
+        var dl = el("td");
+        var del = el("button","link link-warn","удалить");
+        del.addEventListener("click", function(){
+          send("delete","Задачи",{id:row.id})
+            .then(function(){ return afterWrite("Удалено"); })
+            .catch(function(e2){ toast("Ошибка: " + e2.message); });
+        });
+        dl.appendChild(del); tr.appendChild(dl);
+        body.appendChild(tr);
+      });
+      tb.appendChild(body); tw.appendChild(tb); t.appendChild(tw);
+    }
+    w.appendChild(t);
+  }
+
+  function head(cols){
+    var thead = document.createElement("thead");
+    var tr = document.createElement("tr");
+    cols.forEach(function(c){ tr.appendChild(el("th", null, c)); });
+    thead.appendChild(tr);
+    return thead;
+  }
+
+  /* ——— Лиды ——— */
+
+  function renderLeads(w){
+    var p = el("div","panel");
+    p.appendChild(el("h3", null, "Новый лид"));
+    var form = el("div","form");
+    var nick = document.createElement("input"); nick.type="text"; nick.placeholder="@ник";
+    var klass = document.createElement("input"); klass.type="text"; klass.placeholder="7";
+    var subj = document.createElement("select");
+    ["математика","химия"].forEach(function(s){ var o=document.createElement("option"); o.value=s; o.textContent=s; subj.appendChild(o); });
+    var goal = document.createElement("input"); goal.type="text"; goal.placeholder="подтянуть, ЦТ…";
+    var add = el("button","btn","Добавить");
+    [["Ник",nick],["Класс",klass],["Предмет",subj],["Цель",goal]].forEach(function(pair){
+      var l = el("label"); l.appendChild(el("span",null,pair[0])); l.appendChild(pair[1]); form.appendChild(l);
+    });
+    form.appendChild(add);
+    add.addEventListener("click", function(){
+      if(!nick.value.trim()) return;
+      send("add","Лиды",{row:{
+        "дата":today(), "ник":nick.value.trim(), "класс":klass.value.trim(),
+        "предмет":subj.value, "цель":goal.value.trim(), "статус":"новый", "источник":"реклама"
+      }}).then(function(){ nick.value=""; klass.value=""; goal.value=""; return afterWrite("Лид добавлен"); })
+        .catch(function(e){ toast("Ошибка: " + e.message); });
+    });
+    p.appendChild(form);
+    w.appendChild(p);
+
+    var t = el("div","panel");
+    t.appendChild(el("h3", null, "Лиды"));
+    var rows = DATA["Лиды"].slice().reverse();
+    if(!rows.length){ t.appendChild(el("p","empty","Пока пусто. Пришлите мне скрины переписок — я занесу.")); w.appendChild(t); return; }
+    var tw = el("div","tbl-wrap");
+    var tb = document.createElement("table");
+    tb.appendChild(head(["Дата","Ник","Класс","Предмет","Статус","Следующий шаг","Когда",""]));
+    var body = document.createElement("tbody");
+    rows.forEach(function(row){
+      var tr = document.createElement("tr");
+      tr.appendChild(el("td","muted", row["дата"]));
+      tr.appendChild(el("td", null, row["ник"]));
+      tr.appendChild(el("td", null, row["класс"]));
+      tr.appendChild(el("td","muted", row["предмет"]));
+      var st = el("td");
+      var sel = document.createElement("select");
+      STATUSES.forEach(function(s){
+        var o = document.createElement("option"); o.value = s; o.textContent = s;
+        if(row["статус"] === s) o.selected = true;
+        sel.appendChild(o);
+      });
+      sel.addEventListener("change", function(){
+        send("update","Лиды",{id:row.id, row:{"статус":sel.value}})
+          .then(function(){ return afterWrite("Статус обновлён"); })
+          .catch(function(e){ toast("Ошибка: " + e.message); });
+      });
+      st.appendChild(sel); tr.appendChild(st);
+      tr.appendChild(el("td", null, row["след_шаг"]));
+      var wh = el("td");
+      var overdue = row["след_дата"] && row["след_дата"] < today();
+      if(row["след_дата"]) wh.appendChild(el("span", overdue ? "pill pill-warn" : "pill", row["след_дата"]));
+      tr.appendChild(wh);
+      var a = el("td");
+      var mk = el("button","link","в задачи");
+      mk.addEventListener("click", function(){
+        send("add","Задачи",{row:{"создана":today(),"что":"Написать " + row["ник"],"кого":row["ник"],"срок":today(),"кто":"Артур","сделано":"нет"}})
+          .then(function(){ return afterWrite("Добавлено в задачи"); })
+          .catch(function(e){ toast("Ошибка: " + e.message); });
+      });
+      a.appendChild(mk); tr.appendChild(a);
+      body.appendChild(tr);
+    });
+    tb.appendChild(body); tw.appendChild(tb); t.appendChild(tw);
+    w.appendChild(t);
+  }
+
+  /* ——— Ученики ——— */
+
+  function renderPupils(w){
+    var t = el("div","panel");
+    t.appendChild(el("h3", null, "Ученики"));
+    var rows = DATA["Ученики"];
+    if(!rows.length){ t.appendChild(el("p","empty","Пока пусто.")); w.appendChild(t); return; }
+    var tw = el("div","tbl-wrap");
+    var tb = document.createElement("table");
+    tb.appendChild(head(["Ученик","Класс","Предмет","Формат","Группа","Discord","Holst","Статус"]));
+    var body = document.createElement("tbody");
+    rows.forEach(function(row){
+      var tr = document.createElement("tr");
+      tr.appendChild(el("td", null, row["ученик"]));
+      tr.appendChild(el("td", null, row["класс"]));
+      tr.appendChild(el("td","muted", row["предмет"]));
+      tr.appendChild(el("td", null, row["формат"]));
+      tr.appendChild(el("td","muted", row["группа"]));
+      tr.appendChild(mark(row["discord"]));
+      tr.appendChild(mark(row["holst"]));
+      tr.appendChild(el("td","muted", row["статус"]));
+      body.appendChild(tr);
+    });
+    tb.appendChild(body); tw.appendChild(tb); t.appendChild(tw);
+    w.appendChild(t);
+  }
+  function mark(v){
+    var td = el("td");
+    var ok = String(v).toLowerCase() === "да";
+    td.appendChild(el("span", ok ? "pill" : "pill pill-warn", ok ? "есть" : "нет"));
+    return td;
+  }
+
+  /* ——— Оплаты ——— */
+
+  function renderPay(w){
+    var p = el("div","panel");
+    p.appendChild(el("h3", null, "Новая оплата"));
+    var form = el("div","form");
+    var who = document.createElement("input"); who.type="text"; who.placeholder="ученик";
+    var mon = document.createElement("input"); mon.type="text"; mon.placeholder="сентябрь";
+    var sum = document.createElement("input"); sum.type="number"; sum.placeholder="260";
+    var chek = document.createElement("select");
+    ["да","нет"].forEach(function(s){ var o=document.createElement("option"); o.value=s; o.textContent=s; chek.appendChild(o); });
+    var add = el("button","btn","Записать");
+    [["Ученик",who],["Месяц",mon],["Сумма",sum],["Чек",chek]].forEach(function(pair){
+      var l = el("label"); l.appendChild(el("span",null,pair[0])); l.appendChild(pair[1]); form.appendChild(l);
+    });
+    form.appendChild(add);
+    add.addEventListener("click", function(){
+      if(!who.value.trim()) return;
+      send("add","Оплаты",{row:{"дата":today(),"ученик":who.value.trim(),"месяц":mon.value.trim(),"сумма":sum.value,"чек":chek.value}})
+        .then(function(){ who.value=""; sum.value=""; return afterWrite("Оплата записана"); })
+        .catch(function(e){ toast("Ошибка: " + e.message); });
+    });
+    p.appendChild(form);
+    w.appendChild(p);
+
+    var t = el("div","panel");
+    t.appendChild(el("h3", null, "Оплаты"));
+    var rows = DATA["Оплаты"].slice().reverse();
+    if(!rows.length){ t.appendChild(el("p","empty","Пока пусто.")); w.appendChild(t); return; }
+    var tw = el("div","tbl-wrap");
+    var tb = document.createElement("table");
+    tb.appendChild(head(["Дата","Ученик","Месяц","Сумма","Чек"]));
+    var body = document.createElement("tbody");
+    rows.forEach(function(row){
+      var tr = document.createElement("tr");
+      tr.appendChild(el("td","muted", row["дата"]));
+      tr.appendChild(el("td", null, row["ученик"]));
+      tr.appendChild(el("td", null, row["месяц"]));
+      tr.appendChild(el("td", null, row["сумма"]));
+      tr.appendChild(mark(row["чек"]));
+      body.appendChild(tr);
+    });
+    tb.appendChild(body); tw.appendChild(tb); t.appendChild(tw);
+    w.appendChild(t);
+  }
+
+  /* ——— Календарь ——— */
+
+  function renderCal(w){
+    var busyList = CAL.filter(function(c){ return !c.free; });
+    var freeList = CAL.filter(function(c){ return c.free; });
+
+    var b = el("div","panel");
+    b.appendChild(el("h3", null, "Назначенные пробные"));
+    if(!busyList.length) b.appendChild(el("p","empty","Пока никого не записали."));
+    busyList.forEach(function(c){
+      var r = el("div"); r.style.padding = "8px 0"; r.style.borderTop = "1px solid var(--line)";
+      var t1 = el("div", null, c.title); t1.style.fontWeight = "600"; t1.style.color = "var(--grape)";
+      var t2 = el("div","muted", c.when); t2.style.fontSize = "13px";
+      r.appendChild(t1); r.appendChild(t2);
+      if(c.meet){
+        var a = document.createElement("a");
+        a.href = c.meet; a.target = "_blank"; a.rel = "noopener";
+        a.className = "muted"; a.style.fontSize = "12px"; a.textContent = "ссылка на встречу";
+        r.appendChild(a);
+      }
+      b.appendChild(r);
+    });
+    w.appendChild(b);
+
+    var f = el("div","panel");
+    f.appendChild(el("h3", null, "Свободные окна"));
+    if(!freeList.length) f.appendChild(el("p","empty","Окон нет - поставьте их в календарь «Окна для пробного»."));
+    var byDay = {}, order = [];
+    freeList.forEach(function(c){
+      var d = c.when.split(",")[0] + "," + c.when.split(",")[1];
+      if(!byDay[d]){ byDay[d] = []; order.push(d); }
+      byDay[d].push(c.when.split(", ").pop());
+    });
+    order.forEach(function(d){
+      var r = el("div"); r.style.padding = "7px 0"; r.style.borderTop = "1px solid var(--line)";
+      r.style.display = "flex"; r.style.gap = "14px"; r.style.flexWrap = "wrap";
+      var a = el("div","muted", d); a.style.minWidth = "150px"; a.style.fontSize = "13px";
+      var bb = el("div","", byDay[d].join(", ")); bb.style.fontFamily = "var(--mono)"; bb.style.fontSize = "13px";
+      r.appendChild(a); r.appendChild(bb);
+      f.appendChild(r);
+    });
+    w.appendChild(f);
+  }
+
+  /* ——— старт ——— */
+
+  function boot(){
+    if(!key){ renderGate(); return; }
+    app.innerHTML = "";
+    var g = el("div","gate");
+    g.appendChild(el("h2", null, "Загружаю…"));
+    app.appendChild(g);
+    Promise.all([load(), loadCalendar()]).then(function(res){
+      render();
+    }).catch(function(e){
+      key = "";
+      try{ localStorage.removeItem(KEY_STORE); }catch(e2){}
+      renderGate("Ключ не подошёл. Попробуйте ещё раз.");
+    });
+  }
+
+  boot();
+})();
+</script>
