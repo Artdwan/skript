@@ -86,6 +86,44 @@
   .step{flex:1 1 120px;background:var(--accent-soft);border-radius:10px;padding:12px}
   .step .k{font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
   .step .v{font-family:var(--display);font-size:24px;font-weight:600}
+  .step .c{font-family:var(--mono);font-size:11px;color:var(--accent)}
+
+  /* доска воронки */
+  .board{display:flex;gap:10px;overflow-x:auto;padding:2px 2px 10px;align-items:flex-start}
+  .col{flex:0 0 214px;background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
+       box-shadow:var(--shadow);padding:11px 11px 14px;min-height:130px}
+  .col.arch{background:var(--paper)}
+  .col.over{outline:2px dashed var(--accent);outline-offset:2px}
+  .col-top{display:flex;justify-content:space-between;align-items:baseline;gap:6px}
+  .col-name{font:600 13.5px/1.25 var(--sans)}
+  .col-n{font-family:var(--mono);font-size:13px;color:var(--muted)}
+  .col-hint{font-size:11.5px;color:var(--muted);margin-top:2px}
+  .col-conv{font-family:var(--mono);font-size:11.5px;margin-top:7px;padding-top:7px;border-top:1px solid var(--line);
+            display:flex;justify-content:space-between;gap:6px;color:var(--muted)}
+  .col-conv b{color:var(--accent);font-weight:600}
+  .col-conv .low{color:var(--warn)}
+  .card{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:9px 10px;margin-top:8px}
+  .col.arch .card{background:var(--card)}
+  .card[draggable="true"]{cursor:grab}
+  .card.drag{opacity:.4}
+  .card-top{display:flex;justify-content:space-between;gap:6px;align-items:baseline}
+  .card-nick{font:600 14px/1.2 var(--sans);word-break:break-word}
+  .card-meta{font-size:12px;color:var(--muted);margin-top:2px}
+  .card-goal{font-size:12.5px;margin-top:4px}
+  .card-tags{display:flex;gap:5px;flex-wrap:wrap;margin-top:6px}
+  .tag{font:500 11px/1 var(--sans);padding:4px 7px;border-radius:999px;background:var(--accent-soft);color:var(--ink);
+       border:0;cursor:pointer;white-space:nowrap}
+  .tag-warn{background:var(--warn-soft);color:var(--warn)}
+  .tag-grape{background:var(--grape-soft);color:var(--grape)}
+  .card-nav{display:flex;gap:6px;margin-top:8px;align-items:center}
+  .nav-b{font:600 13px/1 var(--mono);border:1px solid var(--line);background:var(--card);color:var(--ink);
+         border-radius:8px;padding:5px 9px;cursor:pointer}
+  .nav-b:disabled{opacity:.3;cursor:default}
+  .nav-x{margin-left:auto;font-size:12px}
+  .seg{display:inline-flex;border:1px solid var(--line);border-radius:999px;overflow:hidden}
+  .seg button{font:500 12.5px/1 var(--sans);padding:8px 12px;border:0;background:var(--card);color:var(--ink);cursor:pointer}
+  .seg button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
+  .bar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
 
   .form{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));align-items:end}
   .form label{display:grid;gap:4px;font-size:12.5px;color:var(--muted)}
@@ -109,7 +147,18 @@
   var TZ = "Europe/Minsk";
   var KEY_STORE = "arttich-admin-key";
 
-  var STATUSES = ["новый","ответил","пробное назначено","пробное состоялось","оплатил","отказ","молчит"];
+  /* Этапы воронки. Порядок важен: по нему считаются конверсии. */
+  var STAGES = [
+    {k:"директ",  name:"Написали в Директ",      hint:"старт воронки"},
+    {k:"запрос",  name:"Назвали предмет и класс", hint:"поняли, что нужно"},
+    {k:"цена",    name:"Получили цену",          hint:"отправили условия"},
+    {k:"записан", name:"Записались на пробное",  hint:"есть дата и время"},
+    {k:"пробное", name:"Пришли на пробное",      hint:"диагностика прошла"},
+    {k:"оплатил", name:"Оплатили",               hint:"первый платёж"}
+  ];
+  var ARCH = {k:"архив", name:"Архив", hint:"отказ или тишина"};
+  var KEYS = STAGES.map(function(s){ return s.k; });
+  var REASONS = ["","дорого","нет времени","передумал","ушёл к другим","не тот класс","молчит"];
 
   var key = "";
   try{ key = localStorage.getItem(KEY_STORE) || ""; }catch(e){ key = ""; }
@@ -118,6 +167,9 @@
   var CAL = [];
   var tab = "today";
   var busy = false;
+  var period = "all";
+  var closedOnly = false;
+  var dragId = null;
 
   var app = document.getElementById("app");
 
@@ -230,6 +282,7 @@
 
   var TABS = [
     {id:"today",  name:"Сегодня"},
+    {id:"funnel", name:"Воронка"},
     {id:"leads",  name:"Лиды"},
     {id:"groups", name:"Группы"},
     {id:"pupils", name:"Ученики"},
@@ -264,6 +317,7 @@
     w.appendChild(nav);
 
     if(tab === "today")  renderToday(w);
+    if(tab === "funnel") renderFunnel(w);
     if(tab === "leads")  renderLeads(w);
     if(tab === "groups") renderGroups(w);
     if(tab === "pupils") renderPupils(w);
@@ -275,6 +329,7 @@
 
   function countFor(id){
     if(id === "today")  return openTasks().length || null;
+    if(id === "funnel") return DATA["Лиды"].filter(function(l){ return colOf(l) !== ARCH.k; }).length || null;
     if(id === "leads")  return DATA["Лиды"].length || null;
     if(id === "groups") return DATA["Группы"].length || null;
     if(id === "pupils") return DATA["Ученики"].filter(function(p){ return p["статус"] !== "ушёл"; }).length || null;
@@ -287,20 +342,295 @@
     return DATA["Задачи"].filter(function(t){ return String(t["сделано"]).toLowerCase() !== "да"; });
   }
 
+  /* ——— воронка: счёт ——— */
+
+  function idxOf(k){ return KEYS.indexOf(String(k || "").trim()); }
+
+  /* в какой колонке лид стоит сейчас */
+  function colOf(l){
+    var s = String(l["статус"] || "").trim();
+    if(s === ARCH.k) return ARCH.k;
+    var i = idxOf(s);
+    return i >= 0 ? KEYS[i] : KEYS[0];
+  }
+  /* до какого этапа лид дошёл за всю жизнь (для конверсий) */
+  function peak(l){
+    var a = idxOf(l["этап"]);
+    var b = idxOf(l["статус"]);
+    return Math.max(a, b, 0);
+  }
+  function closed(l){ var c = colOf(l); return c === ARCH.k || c === "оплатил"; }
+
+  function inPeriod(l){
+    if(period === "all") return true;
+    var d = String(l["дата"] || "").slice(0,10);
+    if(!d) return true;
+    if(period === "month") return d.slice(0,7) === today().slice(0,7);
+    return d >= new Date(Date.now() - 30*864e5).toISOString().slice(0,10);
+  }
+  function cohort(){
+    return DATA["Лиды"].filter(function(l){
+      return inPeriod(l) && (!closedOnly || closed(l));
+    });
+  }
+  /* сколько лидов дошли до этапа i или дальше */
+  function reached(i, base){
+    base = base || cohort();
+    return base.filter(function(l){ return peak(l) >= i; }).length;
+  }
+  function pct(a, b){ return b ? Math.round(a / b * 100) : null; }
+
+  function daysSince(l){
+    var d = String(l["обновлён"] || l["дата"] || "").slice(0,10);
+    if(!d) return null;
+    var t = Date.parse(d);
+    if(isNaN(t)) return null;
+    return Math.floor((Date.now() - t) / 864e5);
+  }
+
+  function moveLead(l, k){
+    var patch = {"статус":k, "обновлён":today()};
+    if(k !== ARCH.k){
+      var i = idxOf(k);
+      if(i > peak(l)) patch["этап"] = k;
+      patch["ход"] = (k === "оплатил") ? "" : "он";
+    }
+    send("update","Лиды",{id:l.id, row:patch})
+      .then(function(){ return afterWrite(k === ARCH.k ? "В архив" : "Перенёс"); })
+      .catch(function(e){ toast("Ошибка: " + e.message); });
+  }
+  function patchLead(l, row, msg){
+    send("update","Лиды",{id:l.id, row:row})
+      .then(function(){ return afterWrite(msg || "Готово"); })
+      .catch(function(e){ toast("Ошибка: " + e.message); });
+  }
+
+  /* ——— Воронка ——— */
+
+  function renderFunnel(w){
+    var base = cohort();
+
+    /* настройки счёта */
+    var bar = el("div","bar");
+    var seg = el("div","seg");
+    [["all","за всё время"],["month","этот месяц"],["30","30 дней"]].forEach(function(o){
+      var b = el("button", null, o[1]);
+      b.setAttribute("aria-pressed", period === o[0] ? "true" : "false");
+      b.addEventListener("click", function(){ period = o[0]; render(); });
+      seg.appendChild(b);
+    });
+    bar.appendChild(seg);
+    var seg2 = el("div","seg");
+    [[false,"все лиды"],[true,"только закрытые"]].forEach(function(o){
+      var b = el("button", null, o[1]);
+      b.setAttribute("aria-pressed", closedOnly === o[0] ? "true" : "false");
+      b.addEventListener("click", function(){ closedOnly = o[0]; render(); });
+      seg2.appendChild(b);
+    });
+    bar.appendChild(seg2);
+    var tot = pct(reached(KEYS.length - 1, base), reached(0, base));
+    var sum = el("div","muted");
+    sum.style.fontSize = "13px";
+    sum.textContent = "Лидов в расчёте: " + reached(0, base) +
+      " · дошли до оплаты: " + reached(KEYS.length - 1, base) +
+      (tot === null ? "" : " · сквозная конверсия " + tot + "%");
+    bar.appendChild(sum);
+    w.appendChild(bar);
+
+    /* доска */
+    var board = el("div","board");
+    var cols = STAGES.concat([ARCH]);
+    cols.forEach(function(st, ci){
+      var isArch = st.k === ARCH.k;
+      var c = el("div", isArch ? "col arch" : "col");
+
+      var top = el("div","col-top");
+      top.appendChild(el("div","col-name", st.name));
+      var here = base.filter(function(l){ return colOf(l) === st.k; });
+      top.appendChild(el("div","col-n", String(here.length)));
+      c.appendChild(top);
+      c.appendChild(el("div","col-hint", st.hint));
+
+      if(!isArch){
+        var cv = el("div","col-conv");
+        var r = reached(ci, base);
+        cv.appendChild(el("span", null, "дошли " + r));
+        if(ci > 0){
+          var p2 = pct(r, reached(ci - 1, base));
+          var s2 = el("b", (p2 !== null && p2 < 40) ? "low" : null, p2 === null ? "—" : p2 + "%");
+          cv.appendChild(s2);
+        } else {
+          cv.appendChild(el("b", null, "100%"));
+        }
+        c.appendChild(cv);
+      }
+
+      /* приём карточек мышью */
+      c.addEventListener("dragover", function(ev){ ev.preventDefault(); c.classList.add("over"); });
+      c.addEventListener("dragleave", function(){ c.classList.remove("over"); });
+      c.addEventListener("drop", function(ev){
+        ev.preventDefault(); c.classList.remove("over");
+        var l = DATA["Лиды"].filter(function(x){ return String(x.id) === String(dragId); })[0];
+        dragId = null;
+        if(l && colOf(l) !== st.k) moveLead(l, st.k);
+      });
+
+      here.sort(function(a,b){ return (daysSince(b) || 0) - (daysSince(a) || 0); })
+          .forEach(function(l){ c.appendChild(cardFor(l, ci, cols)); });
+
+      if(!here.length){
+        var e = el("div","empty","пусто"); e.style.marginTop = "10px"; e.style.fontSize = "12.5px";
+        c.appendChild(e);
+      }
+      board.appendChild(c);
+    });
+    w.appendChild(board);
+
+    w.appendChild(sourceTable(base));
+
+    var note = el("div","panel");
+    note.appendChild(el("h3", null, "Как считается"));
+    var ul = document.createElement("div");
+    ul.style.fontSize = "14px";
+    [
+      "Число справа в шапке колонки - сколько лидов стоит в ней прямо сейчас.",
+      "«Дошли N» - сколько лидов хоть раз доходили до этого этапа, даже если потом ушли дальше или в архив. Именно это и есть воронка.",
+      "Процент - «дошли» этого этапа делить на «дошли» предыдущего. Он никогда не бывает больше 100%: нельзя прийти на пробное, не записавшись.",
+      "Сквозная конверсия - оплатившие делить на всех лидов периода.",
+      "«Только закрытые» убирает из счёта тех, кто ещё в работе. Они тянут проценты вниз, потому что просто не дошли ещё.",
+      "Красным процент горит, если этап теряет больше 60% - там дырка."
+    ].forEach(function(t){
+      var r = el("div", null, "— " + t);
+      r.style.padding = "3px 0";
+      ul.appendChild(r);
+    });
+    note.appendChild(ul);
+    w.appendChild(note);
+  }
+
+  function cardFor(l, ci, cols){
+    var c = el("div","card");
+    var isArch = colOf(l) === ARCH.k;
+    if(!isArch){
+      c.setAttribute("draggable","true");
+      c.addEventListener("dragstart", function(){ dragId = l.id; c.classList.add("drag"); });
+      c.addEventListener("dragend", function(){ c.classList.remove("drag"); });
+    }
+
+    var top = el("div","card-top");
+    top.appendChild(el("div","card-nick", l["ник"] || "без ника"));
+    c.appendChild(top);
+
+    var meta = [];
+    if(l["класс"]) meta.push(l["класс"] + " класс");
+    if(l["предмет"]) meta.push(l["предмет"]);
+    if(meta.length) c.appendChild(el("div","card-meta", meta.join(" · ")));
+    if(l["цель"]) c.appendChild(el("div","card-goal", l["цель"]));
+    if(l["пробное"]) c.appendChild(el("div","card-meta", "пробное: " + l["пробное"]));
+
+    var tags = el("div","card-tags");
+    if(!isArch){
+      var mine = String(l["ход"] || "") !== "он";
+      var t1 = el("button", mine ? "tag tag-warn" : "tag", mine ? "ход за нами" : "ждём ответ");
+      t1.title = "переключить, чей ход";
+      t1.addEventListener("click", function(){
+        patchLead(l, {"ход": mine ? "он" : "мы", "обновлён": today()}, "Отметил");
+      });
+      tags.appendChild(t1);
+      var d = daysSince(l);
+      if(d !== null && d >= 2 && !mine) tags.appendChild(el("span","tag tag-grape","молчит " + d + " дн"));
+    }
+    if(l["источник"]) tags.appendChild(el("span","tag", l["источник"]));
+    if(tags.children.length) c.appendChild(tags);
+
+    if(isArch){
+      var sel = document.createElement("select");
+      sel.style.marginTop = "8px"; sel.style.fontSize = "12.5px"; sel.style.padding = "6px 8px";
+      REASONS.forEach(function(r){
+        var o = document.createElement("option"); o.value = r; o.textContent = r || "причина?";
+        if(String(l["причина"] || "") === r) o.selected = true;
+        sel.appendChild(o);
+      });
+      sel.addEventListener("change", function(){ patchLead(l, {"причина": sel.value}, "Записал причину"); });
+      c.appendChild(sel);
+      var back = el("button","link","вернуть в работу");
+      back.style.marginTop = "6px";
+      back.addEventListener("click", function(){
+        moveLead(l, KEYS[Math.max(peak(l), 0)]);
+      });
+      c.appendChild(back);
+      return c;
+    }
+
+    var nav = el("div","card-nav");
+    var bk = el("button","nav-b","←");
+    bk.disabled = ci === 0;
+    bk.title = "на шаг назад";
+    bk.addEventListener("click", function(){ moveLead(l, KEYS[ci - 1]); });
+    var fw = el("button","nav-b","→");
+    fw.disabled = ci >= KEYS.length - 1;
+    fw.title = "на шаг вперёд";
+    fw.addEventListener("click", function(){ moveLead(l, KEYS[ci + 1]); });
+    nav.appendChild(bk); nav.appendChild(fw);
+    var x = el("button","link link-warn nav-x","в архив");
+    x.addEventListener("click", function(){ moveLead(l, ARCH.k); });
+    nav.appendChild(x);
+    c.appendChild(nav);
+    return c;
+  }
+
+  function sourceTable(base){
+    var p = el("div","panel");
+    p.appendChild(el("h3", null, "Откуда приходят и что из этого выходит"));
+    var by = {}, order = [];
+    base.forEach(function(l){
+      var s = String(l["источник"] || "не указан");
+      if(!by[s]){ by[s] = []; order.push(s); }
+      by[s].push(l);
+    });
+    if(!order.length){ p.appendChild(el("p","empty","Пока не из чего считать.")); return p; }
+    var tw = el("div","tbl-wrap");
+    var tb = document.createElement("table");
+    tb.appendChild(head(["Источник","Лидов","До цены","Записались","Пришли","Оплатили","Конверсия"]));
+    var body = document.createElement("tbody");
+    order.sort(function(a,b){ return by[b].length - by[a].length; }).forEach(function(s){
+      var rows = by[s];
+      var tr = document.createElement("tr");
+      tr.appendChild(el("td", null, s));
+      tr.appendChild(el("td", null, String(rows.length)));
+      [2,3,4,5].forEach(function(i){
+        tr.appendChild(el("td","muted", String(reached(i, rows))));
+      });
+      var p2 = pct(reached(5, rows), rows.length);
+      var td = el("td");
+      td.appendChild(el("span", (p2 || 0) >= 20 ? "pill" : "pill pill-warn", (p2 === null ? "—" : p2 + "%")));
+      tr.appendChild(td);
+      body.appendChild(tr);
+    });
+    tb.appendChild(body); tw.appendChild(tb); p.appendChild(tw);
+    return p;
+  }
+
   /* ——— Сегодня ——— */
 
   function renderToday(w){
+    var base = cohort();
     var p = el("div","panel");
-    p.appendChild(el("h3", null, "Воронка"));
+    p.appendChild(el("h3", null, "Воронка за всё время"));
     var f = el("div","funnel");
-    STATUSES.slice(0,5).forEach(function(s){
-      var n = DATA["Лиды"].filter(function(l){ return l["статус"] === s; }).length;
+    STAGES.forEach(function(s, i){
+      var r = reached(i, base);
       var c = el("div","step");
-      c.appendChild(el("div","k", s));
-      c.appendChild(el("div","v", String(n)));
+      c.appendChild(el("div","k", s.name));
+      c.appendChild(el("div","v", String(r)));
+      c.appendChild(el("div","c", i === 0 ? "старт" : (pct(r, reached(i-1, base)) === null ? "—" : pct(r, reached(i-1, base)) + "% с прошлого")));
       f.appendChild(c);
     });
     p.appendChild(f);
+    var go = el("button","link","открыть доску");
+    go.style.marginTop = "12px";
+    go.addEventListener("click", function(){ tab = "funnel"; render(); });
+    p.appendChild(go);
     w.appendChild(p);
 
     var t = el("div","panel");
@@ -382,16 +712,21 @@
     var subj = document.createElement("select");
     ["математика","химия"].forEach(function(s){ var o=document.createElement("option"); o.value=s; o.textContent=s; subj.appendChild(o); });
     var goal = document.createElement("input"); goal.type="text"; goal.placeholder="подтянуть, ЦТ…";
+    var src = document.createElement("select");
+    ["реклама","сарафан","профиль","другое"].forEach(function(s){ var o=document.createElement("option"); o.value=s; o.textContent=s; src.appendChild(o); });
     var add = el("button","btn","Добавить");
-    [["Ник",nick],["Класс",klass],["Предмет",subj],["Цель",goal]].forEach(function(pair){
+    [["Ник",nick],["Класс",klass],["Предмет",subj],["Цель",goal],["Источник",src]].forEach(function(pair){
       var l = el("label"); l.appendChild(el("span",null,pair[0])); l.appendChild(pair[1]); form.appendChild(l);
     });
     form.appendChild(add);
     add.addEventListener("click", function(){
       if(!nick.value.trim()) return;
+      var st = klass.value.trim() ? "запрос" : "директ";
       send("add","Лиды",{row:{
         "дата":today(), "ник":nick.value.trim(), "класс":klass.value.trim(),
-        "предмет":subj.value, "цель":goal.value.trim(), "статус":"новый", "источник":"реклама"
+        "предмет":subj.value, "цель":goal.value.trim(),
+        "статус":st, "этап":st, "ход":"мы", "обновлён":today(),
+        "источник":src.value
       }}).then(function(){ nick.value=""; klass.value=""; goal.value=""; return afterWrite("Лид добавлен"); })
         .catch(function(e){ toast("Ошибка: " + e.message); });
     });
@@ -414,16 +749,12 @@
       tr.appendChild(el("td","muted", row["предмет"]));
       var st = el("td");
       var sel = document.createElement("select");
-      STATUSES.forEach(function(s){
-        var o = document.createElement("option"); o.value = s; o.textContent = s;
-        if(row["статус"] === s) o.selected = true;
+      STAGES.concat([ARCH]).forEach(function(s){
+        var o = document.createElement("option"); o.value = s.k; o.textContent = s.name;
+        if(colOf(row) === s.k) o.selected = true;
         sel.appendChild(o);
       });
-      sel.addEventListener("change", function(){
-        send("update","Лиды",{id:row.id, row:{"статус":sel.value}})
-          .then(function(){ return afterWrite("Статус обновлён"); })
-          .catch(function(e){ toast("Ошибка: " + e.message); });
-      });
+      sel.addEventListener("change", function(){ moveLead(row, sel.value); });
       st.appendChild(sel); tr.appendChild(st);
       tr.appendChild(el("td", null, row["след_шаг"]));
       var wh = el("td");
