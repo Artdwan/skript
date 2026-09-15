@@ -3,7 +3,8 @@
  *
  * Свойства скрипта (Настройки проекта - Свойства скрипта):
  *   TG_TOKEN  - токен бота от BotFather
- *   TG_CHAT   - id чата, заполняется функцией findChat
+ *   TG_CHAT   - куда слать: findChat (личка), addGroup или useGroupOnly (группа).
+ *               Можно несколько через запятую; тема форума пишется «id_чата:id_темы».
  *   SHEET_ID  - id таблицы учёта, заполняется функцией setupUchet
  *   ADMIN_KEY - ключ доступа к админке, создаётся функцией setupUchet
  *
@@ -14,7 +15,7 @@ var CAL_ID = 'b43eb3d7776bfcea6809d656966accc9e36cc6cdcf0ea8b0c5b093a514086e67@g
 var FREE_TITLE = 'Свободно для пробного';
 
 var SHEETS = {
-  'Лиды':    ['id','дата','ник','родитель','класс','предмет','цель','статус','предложили','пробное','след_шаг','след_дата','источник','заметка'],
+  'Лиды':    ['id','дата','ник','родитель','класс','предмет','цель','статус','предложили','пробное','след_шаг','след_дата','источник','заметка','этап','ход','обновлён','причина'],
   'Группы':  ['id','название','предмет','класс','формат','дни','преподаватель','заметка'],
   'Ученики': ['id','ученик','класс','предмет','формат','группа','абонемент','родитель','источник','старт','discord','holst','статус','заметка'],
   'Оплаты':  ['id','дата','ученик','месяц','сумма','чек','заметка'],
@@ -26,16 +27,32 @@ function cfg(key) { return props().getProperty(key) || ''; }
 
 /* ——— Telegram ——— */
 
+/**
+ * TG_CHAT может содержать несколько адресов через запятую: личка, группа, ещё группа.
+ * Для темы в форуме пишется «id_чата:id_темы», например «-1001234567890:12».
+ */
+function tgChats() {
+  return cfg('TG_CHAT').split(',').map(function (s) { return s.trim(); })
+                       .filter(function (s) { return s.length; });
+}
+
 function tg(text) {
   var token = cfg('TG_TOKEN');
-  var chat  = cfg('TG_CHAT');
-  if (!token || !chat) return 'нет TG_TOKEN или TG_CHAT в свойствах скрипта';
-  var res = UrlFetchApp.fetch('https://api.telegram.org/bot' + token + '/sendMessage', {
-    method: 'post',
-    payload: { chat_id: chat, text: text, disable_web_page_preview: 'true' },
-    muteHttpExceptions: true
+  var chats = tgChats();
+  if (!token || !chats.length) return 'нет TG_TOKEN или TG_CHAT в свойствах скрипта';
+  var out = [];
+  chats.forEach(function (chat) {
+    var payload = { chat_id: chat, text: text, disable_web_page_preview: 'true' };
+    var parts = String(chat).split(':');
+    if (parts.length === 2) { payload.chat_id = parts[0]; payload.message_thread_id = parts[1]; }
+    var res = UrlFetchApp.fetch('https://api.telegram.org/bot' + token + '/sendMessage', {
+      method: 'post',
+      payload: payload,
+      muteHttpExceptions: true
+    });
+    out.push(chat + ' -> ' + res.getContentText());
   });
-  return res.getContentText();
+  return out.join('\n');
 }
 
 /* ——— Календарь ——— */
@@ -385,4 +402,74 @@ function findChat() {
 /** Разовая проверка связи с ботом. */
 function testMessage() {
   Logger.log(tg('Проверка связи: скрипт АртТич подключён.'));
+}
+
+/* ——— Группа в телеграме ——— */
+
+/** Все чаты, которые бот видел за последние сутки: личка, группы, темы. */
+function listChats() {
+  var token = cfg('TG_TOKEN');
+  if (!token) { Logger.log('Сначала заполните TG_TOKEN в свойствах скрипта'); return; }
+  var res  = UrlFetchApp.fetch('https://api.telegram.org/bot' + token + '/getUpdates',
+                               { muteHttpExceptions: true });
+  var list = (JSON.parse(res.getContentText()).result) || [];
+  if (!list.length) {
+    Logger.log('Сообщений нет. Напишите что-нибудь в группе и запустите ещё раз.');
+    Logger.log('Сейчас в TG_CHAT: ' + (cfg('TG_CHAT') || 'пусто'));
+    return;
+  }
+  var seen = {};
+  list.forEach(function (u) {
+    var msg  = u.message || u.channel_post || u.my_chat_member || u.edited_message || {};
+    var chat = msg.chat;
+    if (!chat) return;
+    var key = String(chat.id) + (msg.message_thread_id ? ':' + msg.message_thread_id : '');
+    if (seen[key]) return;
+    seen[key] = true;
+    Logger.log(chat.type + ' | ' + key + ' | ' + (chat.title || chat.first_name || ''));
+  });
+  Logger.log('Сейчас в TG_CHAT: ' + (cfg('TG_CHAT') || 'пусто'));
+}
+
+function pickGroup() {
+  var token = cfg('TG_TOKEN');
+  if (!token) { Logger.log('Сначала заполните TG_TOKEN в свойствах скрипта'); return null; }
+  var res  = UrlFetchApp.fetch('https://api.telegram.org/bot' + token + '/getUpdates',
+                               { muteHttpExceptions: true });
+  var list = (JSON.parse(res.getContentText()).result) || [];
+  var found = null;
+  list.forEach(function (u) {
+    var msg  = u.message || u.channel_post || u.my_chat_member || u.edited_message || {};
+    var chat = msg.chat;
+    if (chat && (chat.type === 'group' || chat.type === 'supergroup' || chat.type === 'channel')) {
+      found = {
+        key: String(chat.id) + (msg.message_thread_id ? ':' + msg.message_thread_id : ''),
+        title: chat.title || ''
+      };
+    }
+  });
+  if (!found) {
+    Logger.log('Группу не нашёл. Добавьте бота в группу, напишите там любое сообщение и запустите ещё раз.');
+  }
+  return found;
+}
+
+/** Добавить группу к текущим адресатам: писать будет и в личку, и в группу. */
+function addGroup() {
+  var g = pickGroup();
+  if (!g) return;
+  var chats = tgChats();
+  if (chats.indexOf(g.key) < 0) chats.push(g.key);
+  props().setProperty('TG_CHAT', chats.join(','));
+  Logger.log('Группа «' + g.title + '» добавлена. TG_CHAT: ' + chats.join(','));
+  tg('Готово: записи на пробное будут приходить сюда.');
+}
+
+/** Слать только в группу: прежние адресаты заменяются. */
+function useGroupOnly() {
+  var g = pickGroup();
+  if (!g) return;
+  props().setProperty('TG_CHAT', g.key);
+  Logger.log('Теперь пробные идут только в группу «' + g.title + '», TG_CHAT: ' + g.key);
+  tg('Готово: записи на пробное будут приходить сюда.');
 }
