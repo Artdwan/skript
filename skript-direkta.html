@@ -608,6 +608,14 @@
   // ——— запись пробного ———
   function bookSummary(){
     var s = confirmedSlot();
+    if(moveFrom){
+      return "Пробное перенесено\n"
+        + "Instagram: " + (bookInsta || "-") + "\n"
+        + "Класс: " + c().subj + ", " + c().label + "\n"
+        + "Было: " + moveFrom.dayPlain + ", " + moveFrom.time + "\n"
+        + "Стало: " + (s ? s.dayPlain + ", " + s.time : "-") + "\n"
+        + "Ссылка: " + ((s && s.meet) ? s.meet : (MEET_FALLBACK || "-"));
+    }
     return "Пробное записано\n"
       + "Instagram: " + (bookInsta || "-") + "\n"
       + "Класс: " + c().subj + ", " + c().label + "\n"
@@ -640,6 +648,12 @@
       });
       BOOKINGS.sort(function(x, y){ return x.id < y.id ? -1 : 1; });
       dropBookedFromSlots();
+      if(moveFrom){
+        var old = moveFrom;
+        moveFrom = null;
+        if(contacts[old.id]){ contacts[s.id] = contacts[old.id]; saveContacts(); }
+        cancelBooking(old);   // старое окно возвращается в свободные и желтеет в календаре
+      }
       renderBookings();
       render();
     }
@@ -898,6 +912,12 @@
         renderBookings();
       });
       foot.appendChild(ce);
+      var mv = document.createElement("button");
+      mv.type = "button";
+      mv.className = "book-edit";
+      mv.textContent = "перенести";
+      mv.addEventListener("click", function(){ startMove(b); });
+      foot.appendChild(mv);
       var x = document.createElement("button");
       x.type = "button";
       x.className = "book-cancel" + (pendingCancel === b.id ? " book-cancel-armed" : "");
@@ -941,6 +961,41 @@
     snapSlots = {};
     bookInsta = "";
     bookState = "";
+    moveFrom = null;
+  }
+
+  // ——— перенос записанного пробного ———
+  var moveFrom = null;   // карточка, которую переносим
+  function classKeyByLabel(txt){
+    var t = String(txt || "");
+    var keys = Object.keys(CLASSES);
+    var i, k;
+    for(i = 0; i < keys.length; i++){
+      k = CLASSES[keys[i]];
+      if((k.subj + ", " + k.label) === t) return keys[i];
+    }
+    // запасной разбор, если в календаре записано короче: «6 класс», «химия 9»
+    var num = (t.match(/\d+/) || [])[0];
+    if(!num) return null;
+    var chem = /хим/i.test(t);
+    for(i = 0; i < keys.length; i++){
+      k = CLASSES[keys[i]];
+      if(k.label === num + " класс" && (/^хим/i.test(k.subj) === chem)) return keys[i];
+    }
+    return null;
+  }
+  function startMove(b){
+    moveFrom = b;
+    bookInsta = b.insta || "";
+    bookState = "";
+    picked = [];
+    confirmedId = null;
+    var key = classKeyByLabel(b.klass);
+    if(key){ current = key; groupIndex = 0; renderChips(); }
+    path = ["start", "move"];
+    render();
+    var st = document.getElementById("step");
+    if(st) st.scrollIntoView({block:"start", behavior:"smooth"});
   }
   function pruneBooked(){
     var now = Date.now(), changed = false;
@@ -1243,7 +1298,12 @@
         "Записал вас на {{деньКна}}, в {{времяК}}.\n\nЗанятие в Google Meet - просто перейдёте по ссылке, ничего устанавливать не нужно, подойдёт и компьютер, и телефон.\n\nСсылку отправлю следующим сообщением. Куда её продублировать, чтобы точно не потерялась - в Telegram, Viber или на почту?",
         "{{ссылка}}"
       ],
-      note:"Если клиент прислал телефон, почту или телеграм - нажмите «добавить контакт» на его карточке в «Записанных пробных» справа и впишите туда. Контакт сохранится у записи и сразу уйдёт в бот.",
+      note:function(){
+        var base = "Если клиент прислал телефон, почту или телеграм - нажмите «добавить контакт» на его карточке в «Записанных пробных» справа и впишите туда. Контакт сохранится у записи и сразу уйдёт в бот.";
+        if(!moveFrom) return base;
+        return "Это перенос: старое окно " + moveFrom.dayPlain + ", " + moveFrom.time +
+               " освободится сразу после отправки. " + base;
+      },
       next:[]
     },
 
@@ -1285,6 +1345,11 @@
       title:"Перенос",
       hint:"Новые слоты — в том же сообщении. Пауза на сутки здесь уже стоила нам клиентов.",
       msgs:["Хорошо, перенесём.\n\nМогу {{день1}} в {{время1}} или {{день2}} в {{время2}}. Как удобнее?"],
+      note:function(){
+        if(!moveFrom) return "";
+        return "Переносим " + (moveFrom.insta || "без ника") + ": было " + moveFrom.dayPlain + ", " + moveFrom.time +
+               ". Нажмите два свободных окна, а после ответа родителя - «Выбрал время». Старое окно вернётся в свободные только когда отправите новую запись.";
+      },
       next:[{t:"Выбрал время", to:"book"}]
     },
 
