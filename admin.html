@@ -1,3 +1,5 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>АртТич · Кабинет</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -163,7 +165,7 @@
   var key = "";
   try{ key = localStorage.getItem(KEY_STORE) || ""; }catch(e){ key = ""; }
 
-  var DATA = {"Лиды":[], "Группы":[], "Ученики":[], "Оплаты":[], "Задачи":[]};
+  var DATA = {"Лиды":[], "Группы":[], "Ученики":[], "Оплаты":[], "Задачи":[], "Контакты":[]};
   var CAL = [];
   var tab = "today";
   var busy = false;
@@ -941,6 +943,27 @@
 
   /* ——— Календарь ——— */
 
+  // контакты со страницы Насти: одна строка на пробное, ключ - время начала в миллисекундах
+  function contactFor(iso){
+    var t = Date.parse(iso);
+    if(isNaN(t)) return null;
+    var key = String(t);
+    var rows = DATA["Контакты"] || [];
+    for(var i = rows.length - 1; i >= 0; i--){
+      if(String(rows[i]["ключ"]) === key) return rows[i];
+    }
+    return null;
+  }
+  function contactLines(iso){
+    var c = contactFor(iso);
+    if(!c) return [];
+    var out = [];
+    if(c["телеграм"]) out.push("Телеграм: " + c["телеграм"]);
+    if(c["вайбер"])   out.push("Вайбер: " + c["вайбер"]);
+    if(c["почта"])    out.push("Почта: " + c["почта"]);
+    return out;
+  }
+
   function renderCal(w){
     var busyList = CAL.filter(function(c){ return !c.free; });
     var freeList = CAL.filter(function(c){ return c.free; });
@@ -953,6 +976,11 @@
       var t1 = el("div", null, c.title); t1.style.fontWeight = "600"; t1.style.color = "var(--grape)";
       var t2 = el("div","muted", c.when); t2.style.fontSize = "13px";
       r.appendChild(t1); r.appendChild(t2);
+      contactLines(c.iso).forEach(function(line){
+        var ct = el("div", null, line);
+        ct.style.fontSize = "13px";
+        r.appendChild(ct);
+      });
       if(c.meet){
         var a = document.createElement("a");
         a.href = c.meet; a.target = "_blank"; a.rel = "noopener";
