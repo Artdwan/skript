@@ -579,15 +579,19 @@
     if(!lines.length){ delete contacts[b.id]; saveContacts(); renderBookings(); return; }
     if(HOOK){
       c.sent = Date.now();
+      // уходит в лист «Контакты» таблицы учёта и дублируется в бот
       fetch(HOOK, {
         method: "POST",
         mode: "no-cors",
         headers: {"Content-Type": "text/plain;charset=utf-8"},
         body: JSON.stringify({
-          text: "Контакты для пробного\n" +
-                "Instagram: " + (b.insta || "-") + "\n" +
-                "Когда: " + b.dayPlain + ", " + b.time + "\n" +
-                lines.join("\n")
+          action: "contact",
+          start: b.id,
+          insta: b.insta || "",
+          when: b.dayPlain + ", " + b.time,
+          tg: c.tg || "",
+          viber: c.viber || "",
+          mail: c.mail || ""
         })
       }).catch(function(){});
     }
