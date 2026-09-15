@@ -1,3 +1,5 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Скрипт Директа АртТич</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -213,7 +215,11 @@
     font:inherit;font-size:12px;background:none;border:0;padding:0;
     color:var(--grape);text-decoration:underline;cursor:pointer;
   }
-  .book-cform{display:flex;gap:6px;margin-top:4px}
+  .book-cform{display:grid;gap:6px;margin-top:6px}
+  .book-crow{display:grid;grid-template-columns:62px minmax(0,1fr);gap:8px;align-items:center}
+  .book-clabel{font-size:11.5px;color:var(--muted)}
+  .book-cbtns{display:flex;gap:10px;align-items:center;margin-top:2px}
+  .book-sent{font-size:11.5px;color:var(--accent);margin-top:2px}
   .book-cinput{
     flex:1 1 auto;min-width:0;font:400 13px/1.3 var(--sans);
     padding:6px 9px;border:1px solid var(--line);border-radius:8px;
@@ -534,26 +540,60 @@
   var contacts = {};
   try{ contacts = JSON.parse(localStorage.getItem(CONTACT_KEY) || "{}") || {}; }catch(e){ contacts = {}; }
   function saveContacts(){ try{ localStorage.setItem(CONTACT_KEY, JSON.stringify(contacts)); }catch(e){} }
-  var editContact = null;      // id карточки, у которой открыто поле
-  function setContact(b, val){
-    val = String(val || "").trim();
-    if(val) contacts[b.id] = val; else delete contacts[b.id];
-    saveContacts();
+  var editContact = null;      // id карточки, у которой открыты поля
+  var FIELDS = [
+    {k:"tg",    label:"Телеграм", ph:"@ник или номер"},
+    {k:"viber", label:"Вайбер",   ph:"номер"},
+    {k:"mail",  label:"Почта",    ph:"почта"}
+  ];
+  // старые записи хранились одной строкой - показываем её как «ещё»
+  function contactOf(id){
+    var c = contacts[id];
+    if(!c) return null;
+    if(typeof c === "string") return {other: c};
+    return c;
+  }
+  function contactLines(c){
+    if(!c) return [];
+    var out = [];
+    FIELDS.forEach(function(f){ if(c[f.k]) out.push(f.label + ": " + c[f.k]); });
+    if(c.other) out.push("Ещё: " + c.other);
+    return out;
+  }
+  function sentLabel(c){
+    if(!c || !c.sent) return "";
+    var d = new Date(c.sent);
+    if(isNaN(d)) return "";
+    return "в боте с " + d.toLocaleString("ru-RU", {day:"numeric", month:"long", hour:"2-digit", minute:"2-digit"});
+  }
+  function setContacts(b, vals){
+    var c = {};
+    FIELDS.forEach(function(f){
+      var v = String(vals[f.k] || "").trim();
+      if(v) c[f.k] = v;
+    });
+    var was = contactOf(b.id);
+    if(was && was.other) c.other = was.other;
+    var lines = contactLines(c);
     editContact = null;
-    renderBookings();
-    if(val && HOOK){
+    if(!lines.length){ delete contacts[b.id]; saveContacts(); renderBookings(); return; }
+    if(HOOK){
+      c.sent = Date.now();
       fetch(HOOK, {
         method: "POST",
         mode: "no-cors",
         headers: {"Content-Type": "text/plain;charset=utf-8"},
         body: JSON.stringify({
-          text: "Контакт для пробного\n" +
+          text: "Контакты для пробного\n" +
                 "Instagram: " + (b.insta || "-") + "\n" +
                 "Когда: " + b.dayPlain + ", " + b.time + "\n" +
-                "Контакт: " + val
+                lines.join("\n")
         })
       }).catch(function(){});
     }
+    contacts[b.id] = c;
+    saveContacts();
+    renderBookings();
   }
 
   function pruneUsed(){
@@ -907,7 +947,7 @@
       var ce = document.createElement("button");
       ce.type = "button";
       ce.className = "book-edit";
-      ce.textContent = contacts[b.id] ? "изменить контакт" : "добавить контакт";
+      ce.textContent = contactOf(b.id) ? "изменить контакты" : "добавить контакты";
       ce.addEventListener("click", function(){
         editContact = (editContact === b.id) ? null : b.id;
         renderBookings();
@@ -926,30 +966,62 @@
       x.addEventListener("click", function(){ askCancel(b); });
       foot.appendChild(x);
       row.appendChild(who); row.appendChild(when);
-      if(contacts[b.id]){
+      var cc = contactOf(b.id);
+      contactLines(cc).forEach(function(line){
         var ct = document.createElement("div");
         ct.className = "book-contact";
-        ct.textContent = "Связь: " + contacts[b.id];
+        ct.textContent = line;
         row.appendChild(ct);
+      });
+      if(cc && cc.sent){
+        var sm = document.createElement("div");
+        sm.className = "book-sent";
+        sm.textContent = sentLabel(cc);
+        row.appendChild(sm);
       }
       row.appendChild(foot);
       if(editContact === b.id){
         var form = document.createElement("div");
         form.className = "book-cform";
-        var inp = document.createElement("input");
-        inp.type = "text";
-        inp.className = "book-cinput";
-        inp.placeholder = "телефон, почта или телеграм";
-        inp.value = contacts[b.id] || "";
+        var have = contactOf(b.id) || {};
+        var inputs = {};
+        FIELDS.forEach(function(f){
+          var line = document.createElement("label");
+          line.className = "book-crow";
+          var lab = document.createElement("span");
+          lab.className = "book-clabel";
+          lab.textContent = f.label;
+          var inp = document.createElement("input");
+          inp.type = "text";
+          inp.className = "book-cinput";
+          inp.placeholder = f.ph;
+          inp.value = have[f.k] || "";
+          inp.addEventListener("keydown", function(ev){ if(ev.key === "Enter") save(); });
+          inputs[f.k] = inp;
+          line.appendChild(lab); line.appendChild(inp);
+          form.appendChild(line);
+        });
+        function save(){
+          var vals = {};
+          FIELDS.forEach(function(f){ vals[f.k] = inputs[f.k].value; });
+          setContacts(b, vals);
+        }
+        var btns = document.createElement("div");
+        btns.className = "book-cbtns";
         var ok = document.createElement("button");
         ok.type = "button";
         ok.className = "book-csave";
-        ok.textContent = "сохранить";
-        ok.addEventListener("click", function(){ setContact(b, inp.value); });
-        inp.addEventListener("keydown", function(ev){ if(ev.key === "Enter") setContact(b, inp.value); });
-        form.appendChild(inp); form.appendChild(ok);
+        ok.textContent = "сохранить и отправить в бот";
+        ok.addEventListener("click", save);
+        var no = document.createElement("button");
+        no.type = "button";
+        no.className = "book-edit";
+        no.textContent = "отмена";
+        no.addEventListener("click", function(){ editContact = null; renderBookings(); });
+        btns.appendChild(ok); btns.appendChild(no);
+        form.appendChild(btns);
         row.appendChild(form);
-        setTimeout(function(){ inp.focus(); }, 0);
+        setTimeout(function(){ inputs.tg.focus(); }, 0);
       }
       box.appendChild(row);
     });
@@ -1326,7 +1398,7 @@
         ];
       },
       note:function(){
-        var base = "Если клиент прислал телефон, почту или телеграм - нажмите «добавить контакт» на его карточке в «Записанных пробных» справа и впишите туда. Контакт сохранится у записи и сразу уйдёт в бот.";
+        var base = "Если клиент прислал телеграм, вайбер или почту - нажмите «добавить контакты» на его карточке в «Записанных пробных» справа. Там три отдельных поля; после сохранения контакты уйдут в бот, и на карточке появится отметка.";
         if(!moveFrom) return base;
         return "Это перенос: старое окно " + moveFrom.dayPlain + ", " + moveFrom.time +
                " освободится сразу после отправки. " + base;
