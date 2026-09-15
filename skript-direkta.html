@@ -652,7 +652,7 @@
         var old = moveFrom;
         moveFrom = null;
         if(contacts[old.id]){ contacts[s.id] = contacts[old.id]; saveContacts(); }
-        cancelBooking(old);   // старое окно возвращается в свободные и желтеет в календаре
+        cancelBooking(old, true);   // старое окно возвращается в свободные и желтеет в календаре
       }
       renderBookings();
       render();
@@ -724,7 +724,7 @@
       if(pendingCancel === b.id){ pendingCancel = null; renderBookings(); }
     }, 5000);
   }
-  function cancelBooking(b){
+  function cancelBooking(b, noJump){
     pendingCancel = null;
     BOOKINGS = BOOKINGS.filter(function(x){ return x.id !== b.id; });
     delete booked[b.id];
@@ -755,7 +755,8 @@
     }
     renderBookings();
     renderTrial();
-    render();
+    if(noJump){ render(); return; }
+    startAfterCancel(b);
   }
   // ——— календарь в правой колонке ———
   var calMonth = null;   // первое число показываемого месяца
@@ -962,6 +963,24 @@
     bookInsta = "";
     bookState = "";
     moveFrom = null;
+    cancelFrom = null;
+  }
+
+  // ——— ответ после отмены пробного ———
+  var cancelFrom = null;
+  function startAfterCancel(b){
+    cancelFrom = b;
+    moveFrom = null;
+    bookInsta = b.insta || "";
+    bookState = "";
+    picked = [];
+    confirmedId = null;
+    var key = classKeyByLabel(b.klass);
+    if(key){ current = key; groupIndex = 0; renderChips(); }
+    path = ["start", "afterCancel"];
+    render();
+    var st = document.getElementById("step");
+    if(st) st.scrollIntoView({block:"start", behavior:"smooth"});
   }
 
   // ——— перенос записанного пробного ———
@@ -1351,6 +1370,33 @@
                ". Нажмите два свободных окна, а после ответа родителя - «Выбрал время». Старое окно вернётся в свободные только когда отправите новую запись.";
       },
       next:[{t:"Выбрал время", to:"book"}]
+    },
+
+    afterCancel:{
+      slots:true,
+      status:"пробное отменено",
+      stage:"Отмена",
+      title:"Пробное отменили",
+      hint:"«Планы изменились» - чаще всего мягкий отказ. Не уговариваем: один раз предлагаем другое время и оставляем лёгкий выход.",
+      msgs:["Хорошо, спасибо, что предупредили.\n\nПеренесём на другое время или пока отложим?\n\nЕсли перенести - могу {{день1}} в {{время1}} или {{день2}} в {{время2}}."],
+      note:function(){
+        if(!cancelFrom) return "";
+        return "Окно " + cancelFrom.dayPlain + ", " + cancelFrom.time + " уже вернулось в свободные - его можно предложить снова, если родитель передумает.";
+      },
+      next:[
+        {t:"Согласился на новое время", to:"book"},
+        {t:"«Пока отложим»", to:"cancelBye"},
+        {t:"Молчит сутки", to:"rem1"}
+      ]
+    },
+
+    cancelBye:{
+      status:"отказ",
+      stage:"Отмена",
+      title:"«Пока отложим»",
+      hint:"Второй раз не уговариваем. Дверь оставляем открытой: часть таких возвращается через месяц-другой.",
+      msgs:["Хорошо, не буду настаивать.\n\nБудем рады позаниматься, когда станет актуально - напишите, подберём время и группу.\n\nУдачи в учёбе!"],
+      next:[{t:"Вернуться к началу", to:"start"}]
     },
 
     noShow:{
