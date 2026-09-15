@@ -19,7 +19,8 @@ var SHEETS = {
   'Группы':  ['id','название','предмет','класс','формат','дни','преподаватель','заметка'],
   'Ученики': ['id','ученик','класс','предмет','формат','группа','абонемент','родитель','источник','старт','discord','holst','статус','заметка'],
   'Оплаты':  ['id','дата','ученик','месяц','сумма','чек','заметка'],
-  'Задачи':  ['id','создана','что','кого','срок','кто','сделано']
+  'Задачи':  ['id','создана','что','кого','срок','кто','сделано'],
+  'Контакты':['id','создан','ник','пробное','телеграм','вайбер','почта','ключ']
 };
 
 function props() { return PropertiesService.getScriptProperties(); }
@@ -201,6 +202,7 @@ function doPost(e) {
 
   if (d.action === 'admin') return adminPost(d);
   if (d.action === 'cancel') return cancelBooking(d);
+  if (d.action === 'contact') return contactPost(d);
   return bookPost(d);
 }
 
@@ -218,6 +220,52 @@ function adminPost(d) {
   } catch (err) {
     return json({ ok: false, error: String(err) });
   }
+}
+
+/**
+ * Контакты родителя со страницы Насти: телеграм, вайбер, почта.
+ * Пишутся в лист «Контакты» и дублируются в бот. Одно пробное - одна строка,
+ * повторное сохранение обновляет её, а не плодит новые.
+ */
+function contactPost(d) {
+  var key = '';
+  if (d.start) {
+    var t = new Date(d.start).getTime();
+    if (!isNaN(t)) key = String(t);
+  }
+  var row = {
+    'создан':   Utilities.formatDate(new Date(), 'Europe/Minsk', 'yyyy-MM-dd HH:mm'),
+    'ник':      d.insta || '',
+    'пробное':  d.when || '',
+    'телеграм': d.tg || '',
+    'вайбер':   d.viber || '',
+    'почта':    d.mail || '',
+    'ключ':     key
+  };
+
+  var done = false;
+  if (key) {
+    var list = readSheet('Контакты');
+    for (var i = 0; i < list.length; i++) {
+      if (String(list[i]['ключ']) === key) {
+        updateRow('Контакты', list[i].id, row);
+        done = true;
+        break;
+      }
+    }
+  }
+  if (!done) addRow('Контакты', row);
+
+  var lines = [];
+  if (row['телеграм']) lines.push('Телеграм: ' + row['телеграм']);
+  if (row['вайбер'])   lines.push('Вайбер: '   + row['вайбер']);
+  if (row['почта'])    lines.push('Почта: '    + row['почта']);
+  tg('Контакты для пробного\n' +
+     'Instagram: ' + (d.insta || '-') + '\n' +
+     'Когда: '     + (d.when  || '-') + '\n' +
+     lines.join('\n'));
+
+  return ContentService.createTextOutput('ok');
 }
 
 function bookPost(d) {
