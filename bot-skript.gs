@@ -19,7 +19,7 @@ var SHEETS = {
   'Группы':  ['id','название','предмет','класс','формат','дни','преподаватель','заметка'],
   'Ученики': ['id','ученик','класс','предмет','формат','группа','абонемент','родитель','источник','старт','discord','holst','статус','заметка'],
   'Оплаты':  ['id','дата','ученик','месяц','сумма','чек','заметка'],
-  'Задачи':  ['id','создана','что','кого','срок','кто','сделано'],
+  'Задачи':  ['id','создана','что','кого','срок','кто','сделано','текст'],
   'Контакты':['id','создан','ник','пробное','телеграм','вайбер','почта','ключ']
 };
 
@@ -214,20 +214,43 @@ function openTasks() {
 function taskPost(d) {
   if (d.op === 'done') {
     if (!d.id) return json({ ok: false, error: 'нет id' });
+    var was = taskById(d.id);
     updateRow('Задачи', d.id, { 'сделано': 'да' });
+    taskNote('Задача закрыта', was, d.from || 'Настя');
     return json({ ok: true, tasks: openTasks() });
   }
   var what = String(d.what || '').trim();
   if (!what) return json({ ok: false, error: 'пустая задача' });
-  addRow('Задачи', {
+  var row = {
     'создана': Utilities.formatDate(new Date(), 'Europe/Minsk', 'yyyy-MM-dd'),
     'что':     what.slice(0, 300),
     'кого':    String(d.who || '').trim().slice(0, 100),
     'срок':    String(d.due || '').trim().slice(0, 20),
     'кто':     String(d.from || 'Настя').slice(0, 40),
-    'сделано': 'нет'
-  });
+    'сделано': 'нет',
+    'текст':   String(d.text || '').slice(0, 2000)
+  };
+  addRow('Задачи', row);
+  taskNote('Новая задача', row, row['кто']);
   return json({ ok: true, tasks: openTasks() });
+}
+
+function taskById(id) {
+  var list = readSheet('Задачи');
+  for (var i = 0; i < list.length; i++) {
+    if (String(list[i].id) === String(id)) return list[i];
+  }
+  return null;
+}
+
+/** Уведомление в телеграм о том, что стало с задачей. */
+function taskNote(head, row, who) {
+  if (!row) return;
+  var lines = [head, row['что'] || ''];
+  if (row['кого']) lines.push('Кого: ' + row['кого']);
+  if (row['срок']) lines.push('Срок: ' + row['срок']);
+  if (who) lines.push('Кто: ' + who);
+  tg(lines.join('\n'));
 }
 
 function doPost(e) {
@@ -244,9 +267,25 @@ function doPost(e) {
 function adminPost(d) {
   if (!cfg('ADMIN_KEY') || d.k !== cfg('ADMIN_KEY')) return json({ ok: false, error: 'ключ не подходит' });
   try {
-    if (d.op === 'add')    return json({ ok: true, id: addRow(d.sheet, d.row || {}) });
-    if (d.op === 'update') return json({ ok: true, found: updateRow(d.sheet, d.id, d.row || {}) });
-    if (d.op === 'delete') return json({ ok: true, found: deleteRow(d.sheet, d.id) });
+    if (d.op === 'add') {
+      var newId = addRow(d.sheet, d.row || {});
+      if (d.sheet === 'Задачи') taskNote('Новая задача', d.row || {}, (d.row || {})['кто'] || 'Артур');
+      return json({ ok: true, id: newId });
+    }
+    if (d.op === 'update') {
+      var before = d.sheet === 'Задачи' ? taskById(d.id) : null;
+      var found = updateRow(d.sheet, d.id, d.row || {});
+      if (before && String((d.row || {})['сделано']).toLowerCase() === 'да') {
+        taskNote('Задача закрыта', before, 'Артур');
+      }
+      return json({ ok: true, found: found });
+    }
+    if (d.op === 'delete') {
+      var gone = d.sheet === 'Задачи' ? taskById(d.id) : null;
+      var removed = deleteRow(d.sheet, d.id);
+      if (gone && removed) taskNote('Задача удалена', gone, 'Артур');
+      return json({ ok: true, found: removed });
+    }
     if (d.op === 'bulk') {
       var ids = (d.rows || []).map(function (r) { return addRow(d.sheet, r); });
       return json({ ok: true, ids: ids });
