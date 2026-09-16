@@ -5,6 +5,8 @@
  *   TG_TOKEN  - токен бота от BotFather
  *   TG_CHAT   - куда слать: findChat (личка), addGroup или useGroupOnly (группа).
  *               Можно несколько через запятую; тема форума пишется «id_чата:id_темы».
+ *   TG_TASKS  - отдельный адрес для уведомлений о задачах, задаётся функцией setTasksTopic.
+ *               Пусто - задачи идут туда же, куда пробные.
  *   SHEET_ID  - id таблицы учёта, заполняется функцией setupUchet
  *   ADMIN_KEY - ключ доступа к админке, создаётся функцией setupUchet
  *
@@ -37,23 +39,32 @@ function tgChats() {
                        .filter(function (s) { return s.length; });
 }
 
+/** Одно сообщение одному адресату. Адрес: id чата или id чата:id топика. */
+function tgSend(target, text) {
+  var token = cfg('TG_TOKEN');
+  if (!token || !target) return '';
+  var payload = { chat_id: target, text: text, disable_web_page_preview: 'true' };
+  var parts = String(target).split(':');
+  if (parts.length === 2) { payload.chat_id = parts[0]; payload.message_thread_id = parts[1]; }
+  var res = UrlFetchApp.fetch('https://api.telegram.org/bot' + token + '/sendMessage', {
+    method: 'post',
+    payload: payload,
+    muteHttpExceptions: true
+  });
+  return target + ' -> ' + res.getContentText();
+}
+
 function tg(text) {
   var token = cfg('TG_TOKEN');
   var chats = tgChats();
   if (!token || !chats.length) return 'нет TG_TOKEN или TG_CHAT в свойствах скрипта';
-  var out = [];
-  chats.forEach(function (chat) {
-    var payload = { chat_id: chat, text: text, disable_web_page_preview: 'true' };
-    var parts = String(chat).split(':');
-    if (parts.length === 2) { payload.chat_id = parts[0]; payload.message_thread_id = parts[1]; }
-    var res = UrlFetchApp.fetch('https://api.telegram.org/bot' + token + '/sendMessage', {
-      method: 'post',
-      payload: payload,
-      muteHttpExceptions: true
-    });
-    out.push(chat + ' -> ' + res.getContentText());
-  });
-  return out.join('\n');
+  return chats.map(function (chat) { return tgSend(chat, text); }).join('\n');
+}
+
+/** Уведомления о задачах: в топик из TG_TASKS, а если он не задан - туда же, куда пробные. */
+function tgTasks(text) {
+  var target = cfg('TG_TASKS');
+  return target ? tgSend(target, text) : tg(text);
 }
 
 /* ——— Календарь ——— */
@@ -250,7 +261,7 @@ function taskNote(head, row, who) {
   if (row['кого']) lines.push('Кого: ' + row['кого']);
   if (row['срок']) lines.push('Срок: ' + row['срок']);
   if (who) lines.push('Кто: ' + who);
-  tg(lines.join('\n'));
+  tgTasks(lines.join('\n'));
 }
 
 function doPost(e) {
@@ -594,4 +605,38 @@ function useGroupOnly() {
   props().setProperty('TG_CHAT', g.key);
   Logger.log('Теперь пробные идут только в группу «' + g.title + '», TG_CHAT: ' + g.key);
   tg('Готово: записи на пробное будут приходить сюда.');
+}
+
+/**
+ * Куда слать уведомления о задачах.
+ * Напишите любое сообщение в нужный топик группы и запустите эту функцию.
+ */
+function setTasksTopic() {
+  var token = cfg('TG_TOKEN');
+  if (!token) { Logger.log('Сначала заполните TG_TOKEN в свойствах скрипта'); return; }
+  var res  = UrlFetchApp.fetch('https://api.telegram.org/bot' + token + '/getUpdates',
+                               { muteHttpExceptions: true });
+  var list = (JSON.parse(res.getContentText()).result) || [];
+  var found = null;
+  list.forEach(function (u) {
+    var msg  = u.message || u.edited_message || {};
+    var chat = msg.chat;
+    if (chat && msg.message_thread_id &&
+        (chat.type === 'group' || chat.type === 'supergroup')) {
+      found = { key: String(chat.id) + ':' + msg.message_thread_id, title: chat.title || '' };
+    }
+  });
+  if (!found) {
+    Logger.log('Топик не нашёл. Напишите сообщение в нужный топик и запустите ещё раз.');
+    return;
+  }
+  props().setProperty('TG_TASKS', found.key);
+  Logger.log('Уведомления о задачах уходят в «' + found.title + '», адрес ' + found.key);
+  tgTasks('Готово: уведомления о задачах будут приходить сюда.');
+}
+
+/** Вернуть уведомления о задачах туда же, куда идут пробные. */
+function clearTasksTopic() {
+  props().deleteProperty('TG_TASKS');
+  Logger.log('TG_TASKS очищен, задачи снова идут вместе с пробными.');
 }
