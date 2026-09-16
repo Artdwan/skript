@@ -301,7 +301,33 @@
 
   /* ——— переключатель «скрипт / справочник» ——— */
   [hidden]{display:none !important}
-  .viewnav{display:flex;gap:8px;margin-top:14px}
+  .viewnav{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap}
+  /* ——— задачи ——— */
+  .chip-n{
+    font-family:var(--mono);font-size:10.5px;margin-left:7px;opacity:.75;
+    font-variant-numeric:tabular-nums;
+  }
+  .tasks{display:grid;gap:14px;min-width:0}
+  .task-form{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px}
+  .task-list{display:grid}
+  .task-item{
+    display:grid;grid-template-columns:auto minmax(0,1fr) auto;
+    gap:4px 12px;align-items:baseline;padding:10px 0;border-top:1px solid var(--line);
+  }
+  .task-item:first-child{border-top:0}
+  .task-due{
+    font-family:var(--mono);font-size:11px;letter-spacing:.04em;white-space:nowrap;
+    background:var(--accent-soft);color:var(--muted);border-radius:999px;padding:4px 9px;
+  }
+  .task-due.late{background:var(--warn-soft);color:var(--warn);font-weight:600}
+  .task-what{font-size:14px;line-height:1.35}
+  .task-meta{font-size:12.5px;color:var(--muted);margin-top:2px}
+  .task-done{
+    font:inherit;font-size:12px;background:none;border:0;padding:0;
+    color:var(--accent);text-decoration:underline;cursor:pointer;white-space:nowrap;
+  }
+  .task-done:disabled{opacity:.45;cursor:default}
+  .task-empty{font-size:14px;color:var(--muted)}
 
   /* ——— справочник ——— */
   .ref{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));align-items:start;min-width:0}
@@ -355,6 +381,7 @@
     <div class="viewnav">
       <button type="button" class="chip" id="viewScript" aria-pressed="true">Скрипт</button>
       <button type="button" class="chip" id="viewRef" aria-pressed="false">Справочник</button>
+      <button type="button" class="chip" id="viewTasks" aria-pressed="false">Задачи<span class="chip-n" id="taskCount" hidden></span></button>
     </div>
   </header>
 
@@ -453,6 +480,20 @@
           </ul>
         </details>
       </div>
+      </section>
+
+      <section class="tasks" id="tasksView" hidden>
+        <div class="panel">
+          <h3>Задачи<span class="book-count" id="taskCount2" hidden></span></h3>
+          <div class="task-form">
+            <input type="text" class="book-input" id="taskWhat" placeholder="что сделать" autocomplete="off">
+            <input type="text" class="book-input" id="taskWho" placeholder="к кому относится" autocomplete="off">
+            <input type="date" class="book-input" id="taskDue">
+            <button type="button" class="book-send" id="taskAdd">Добавить</button>
+          </div>
+          <div class="task-list" id="taskRows"></div>
+          <p>Список общий с кабинетом Артура. Отметили «готово» - задача уходит и у него.</p>
+        </div>
       </section>
     </div>
 
@@ -900,18 +941,146 @@
     renderCalendar();
   }
 
-  // ——— скрипт или справочник ———
+  // ——— скрипт, справочник или задачи ———
+  var VIEWS = {script:"step", ref:"refView", tasks:"tasksView"};
+  var VIEW_BTNS = {script:"viewScript", ref:"viewRef", tasks:"viewTasks"};
   function setView(v){
-    var isRef = v === "ref";
-    var st = document.getElementById("step");
-    var rf = document.getElementById("refView");
-    if(st) st.hidden = isRef;
-    if(rf) rf.hidden = !isRef;
-    var a = document.getElementById("viewScript");
-    var b = document.getElementById("viewRef");
-    if(a) a.setAttribute("aria-pressed", isRef ? "false" : "true");
-    if(b) b.setAttribute("aria-pressed", isRef ? "true" : "false");
+    if(!VIEWS[v]) v = "script";
+    Object.keys(VIEWS).forEach(function(k){
+      var box = document.getElementById(VIEWS[k]);
+      if(box) box.hidden = (k !== v);
+      var btn = document.getElementById(VIEW_BTNS[k]);
+      if(btn) btn.setAttribute("aria-pressed", k === v ? "true" : "false");
+    });
+    if(v === "tasks") loadTasks();
     window.scrollTo({top:0, behavior:"smooth"});
+  }
+
+  /* ——— задачи: общий список с кабинетом ——— */
+  var TASKS = [];
+  var tasksLoaded = false;
+
+  function pad2(n){ return (n < 10 ? "0" : "") + n; }
+  function todayIso(){
+    var d = new Date();
+    return d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate());
+  }
+
+  function loadTasks(){
+    if(!HOOK || typeof fetch !== "function") return;
+    fetch(HOOK + "?action=tasks", {cache:"no-store"})
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        if(!d || !d.ok) throw new Error("не отдало задачи");
+        TASKS = d.tasks || [];
+        tasksLoaded = true;
+        renderTasks();
+      })
+      .catch(function(){ renderTasks(); });
+  }
+
+  function renderTasks(){
+    var box = document.getElementById("taskRows");
+    if(!box) return;
+    box.innerHTML = "";
+    var n = TASKS.length;
+    ["taskCount", "taskCount2"].forEach(function(id){
+      var c = document.getElementById(id);
+      if(c){ c.textContent = n; c.hidden = !n; }
+    });
+    if(!n){
+      var empty = document.createElement("div");
+      empty.className = "task-empty";
+      empty.textContent = tasksLoaded ? "Открытых задач нет." : "Задачи пока не загрузились.";
+      box.appendChild(empty);
+      return;
+    }
+    var today = todayIso();
+    TASKS.slice().sort(function(a, b){
+      return String(a["срок"] || "9999").localeCompare(String(b["срок"] || "9999"));
+    }).forEach(function(t){
+      var row = document.createElement("div");
+      row.className = "task-item";
+
+      var due = document.createElement("span");
+      due.className = "task-due" + (t["срок"] && t["срок"] < today ? " late" : "");
+      due.textContent = t["срок"] || "без срока";
+      row.appendChild(due);
+
+      var mid = document.createElement("div");
+      var what = document.createElement("div");
+      what.className = "task-what";
+      what.textContent = t["что"] || "";
+      mid.appendChild(what);
+      var meta = [];
+      if(t["кого"]) meta.push(t["кого"]);
+      if(t["кто"]) meta.push("поставил: " + t["кто"]);
+      if(meta.length){
+        var m = document.createElement("div");
+        m.className = "task-meta";
+        m.textContent = meta.join(" · ");
+        mid.appendChild(m);
+      }
+      row.appendChild(mid);
+
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "task-done";
+      btn.textContent = "готово";
+      btn.addEventListener("click", function(){ doneTask(t.id, btn); });
+      row.appendChild(btn);
+
+      box.appendChild(row);
+    });
+  }
+
+  function sendTask(body){
+    return fetch(HOOK, {
+      method: "POST",
+      mode: "no-cors",
+      headers: {"Content-Type": "text/plain;charset=utf-8"},
+      body: JSON.stringify(body)
+    });
+  }
+
+  function addTask(){
+    var what = document.getElementById("taskWhat");
+    var who  = document.getElementById("taskWho");
+    var due  = document.getElementById("taskDue");
+    var btn  = document.getElementById("taskAdd");
+    if(!what || !what.value.trim()) return;
+    if(!HOOK){ toast("Нет адреса шлюза"); return; }
+    if(btn) btn.disabled = true;
+    sendTask({
+      action: "task", op: "add",
+      what: what.value.trim(),
+      who: who ? who.value.trim() : "",
+      due: due ? due.value : "",
+      from: "Настя"
+    }).then(function(){
+      what.value = "";
+      if(who) who.value = "";
+      toast("Задача добавлена");
+      setTimeout(loadTasks, 1200);
+    }).catch(function(){
+      toast("Не отправилось");
+    }).then(function(){
+      if(btn) btn.disabled = false;
+    });
+  }
+
+  function doneTask(id, btn){
+    if(!HOOK || !id) return;
+    if(btn) btn.disabled = true;
+    sendTask({action:"task", op:"done", id:id}).then(function(){
+      TASKS = TASKS.filter(function(t){ return t.id !== id; });
+      renderTasks();
+      toast("Отмечено");
+      setTimeout(loadTasks, 1200);
+    }).catch(function(){
+      if(btn) btn.disabled = false;
+      toast("Не отправилось");
+    });
   }
 
   function renderBookings(){
@@ -2226,6 +2395,7 @@
       if(data && data.meet) MEET_FALLBACK = data.meet;
       if(data && data.hook) HOOK = data.hook;
       renderSched(); renderTrial(); renderChips(); render();
+      loadTasks();
     }).catch(function(){});
   }
 
@@ -2257,8 +2427,18 @@
   if(calN) calN.addEventListener("click", function(){ shiftMonth(1); });
   var vS = document.getElementById("viewScript");
   var vR = document.getElementById("viewRef");
+  var vT = document.getElementById("viewTasks");
   if(vS) vS.addEventListener("click", function(){ setView("script"); });
   if(vR) vR.addEventListener("click", function(){ setView("ref"); });
+  if(vT) vT.addEventListener("click", function(){ setView("tasks"); });
+
+  var tAdd = document.getElementById("taskAdd");
+  if(tAdd) tAdd.addEventListener("click", addTask);
+  var tWhat = document.getElementById("taskWhat");
+  if(tWhat) tWhat.addEventListener("keydown", function(e){ if(e.key === "Enter") addTask(); });
+  var tDue = document.getElementById("taskDue");
+  if(tDue) tDue.value = todayIso();
+  renderTasks();
 
   pruneUsed();
   pruneBooked();
