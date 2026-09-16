@@ -328,6 +328,19 @@
   }
   .task-done:disabled{opacity:.45;cursor:default}
   .task-empty{font-size:14px;color:var(--muted)}
+  .task-open{
+    font:inherit;font-size:12px;background:none;border:0;padding:0;margin-top:4px;
+    color:var(--accent);text-decoration:underline;cursor:pointer;
+  }
+  .task-box{margin-top:8px;background:var(--accent-soft);border-radius:10px;padding:11px 13px}
+  .task-pre{
+    margin:0;font:400 13px/1.55 var(--sans);white-space:pre-wrap;
+    word-break:break-word;color:var(--ink);
+  }
+  .task-copy{
+    margin-top:9px;font:600 12px/1 var(--sans);padding:7px 11px;border-radius:8px;
+    border:1px solid var(--accent);background:var(--accent);color:var(--accent-ink);cursor:pointer;
+  }
 
   /* ——— справочник ——— */
   .ref{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));align-items:start;min-width:0}
@@ -1021,6 +1034,33 @@
         m.textContent = meta.join(" · ");
         mid.appendChild(m);
       }
+      if(t["текст"]){
+        var toggle = document.createElement("button");
+        toggle.type = "button";
+        toggle.className = "task-open";
+        toggle.textContent = "показать текст";
+        var tbox = document.createElement("div");
+        tbox.className = "task-box";
+        tbox.hidden = true;
+        var pre = document.createElement("div");
+        pre.className = "task-pre";
+        pre.textContent = t["текст"];
+        tbox.appendChild(pre);
+        var cbtn = document.createElement("button");
+        cbtn.type = "button";
+        cbtn.className = "task-copy";
+        cbtn.textContent = "скопировать";
+        cbtn.addEventListener("click", function(){ copyText(t["текст"]); });
+        tbox.appendChild(cbtn);
+        toggle.addEventListener("click", (function(tb, tg){
+          return function(){
+            tb.hidden = !tb.hidden;
+            tg.textContent = tb.hidden ? "показать текст" : "скрыть текст";
+          };
+        })(tbox, toggle));
+        mid.appendChild(toggle);
+        mid.appendChild(tbox);
+      }
       row.appendChild(mid);
 
       var btn = document.createElement("button");
@@ -1032,6 +1072,13 @@
 
       box.appendChild(row);
     });
+  }
+
+  function copyText(text){
+    function ok(){ toast("Текст скопирован"); }
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(text).then(ok, function(){ fallback(text, ok); });
+    } else { fallback(text, ok); }
   }
 
   function sendTask(body){
