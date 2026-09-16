@@ -193,7 +193,41 @@ function doGet(e) {
     d.ok = true;
     return json(d);
   }
+  // Открытые задачи для страницы скрипта. Без ключа - по решению Артура,
+  // страница публичная, значит и этот список публичный.
+  if (p.action === 'tasks') {
+    return json({ ok: true, tasks: openTasks() });
+  }
   return ContentService.createTextOutput('АртТич: приёмник записи пробного работает.');
+}
+
+function openTasks() {
+  return readSheet('Задачи').filter(function (t) {
+    return String(t['сделано']).toLowerCase() !== 'да';
+  });
+}
+
+/**
+ * Задачи со страницы скрипта: добавить новую или отметить сделанной.
+ * Удаления здесь нет намеренно - маршрут открытый, строку стереть нельзя.
+ */
+function taskPost(d) {
+  if (d.op === 'done') {
+    if (!d.id) return json({ ok: false, error: 'нет id' });
+    updateRow('Задачи', d.id, { 'сделано': 'да' });
+    return json({ ok: true, tasks: openTasks() });
+  }
+  var what = String(d.what || '').trim();
+  if (!what) return json({ ok: false, error: 'пустая задача' });
+  addRow('Задачи', {
+    'создана': Utilities.formatDate(new Date(), 'Europe/Minsk', 'yyyy-MM-dd'),
+    'что':     what.slice(0, 300),
+    'кого':    String(d.who || '').trim().slice(0, 100),
+    'срок':    String(d.due || '').trim().slice(0, 20),
+    'кто':     String(d.from || 'Настя').slice(0, 40),
+    'сделано': 'нет'
+  });
+  return json({ ok: true, tasks: openTasks() });
 }
 
 function doPost(e) {
@@ -203,6 +237,7 @@ function doPost(e) {
   if (d.action === 'admin') return adminPost(d);
   if (d.action === 'cancel') return cancelBooking(d);
   if (d.action === 'contact') return contactPost(d);
+  if (d.action === 'task') return taskPost(d);
   return bookPost(d);
 }
 
