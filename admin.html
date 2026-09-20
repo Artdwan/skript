@@ -236,24 +236,51 @@
         return true;
       });
   }
+  var queue = Promise.resolve();
   function send(op, sheet, payload){
-    if(busy) return Promise.resolve();
-    busy = true;
     var body = {action:"admin", k:key, op:op, sheet:sheet};
     if(payload.id) body.id = payload.id;
     if(payload.row) body.row = payload.row;
     if(payload.rows) body.rows = payload.rows;
-    return fetch(HOOK, {
-      method:"POST",
-      headers:{"Content-Type":"text/plain;charset=utf-8"},
-      body: JSON.stringify(body)
-    }).then(function(r){ return r.json(); })
-      .then(function(res){
-        busy = false;
-        if(!res.ok) throw new Error(res.error || "не записалось");
-        return res;
-      })
-      .catch(function(err){ busy = false; throw err; });
+    function run(){
+      return fetch(HOOK, {
+        method:"POST",
+        headers:{"Content-Type":"text/plain;charset=utf-8"},
+        body: JSON.stringify(body)
+      }).then(function(r){ return r.json(); })
+        .then(function(res){
+          if(!res.ok) throw new Error(res.error || "не записалось");
+          return res;
+        });
+    }
+    /* запросы идут по очереди: пока один в пути, следующий ждёт, а не теряется */
+    queue = queue.then(run, run);
+    return queue;
+  }
+
+  /* Изменения сразу применяются к локальным данным, а запрос уходит фоном.
+     Если запись не прошла — говорим об этом и перечитываем таблицу заново. */
+  function bg(promise, okMsg){
+    return promise.then(function(){ if(okMsg) toast(okMsg); })
+      .catch(function(e){
+        toast("Не сохранилось: " + e.message);
+        return load().then(render).catch(function(){});
+      });
+  }
+  function localPatch(sheet, id, patch){
+    DATA[sheet].forEach(function(r){
+      if(String(r.id) === String(id))
+        Object.keys(patch).forEach(function(k){ r[k] = patch[k]; });
+    });
+  }
+  function localDrop(sheet, id){
+    DATA[sheet] = DATA[sheet].filter(function(r){ return String(r.id) !== String(id); });
+  }
+  function localAdd(sheet, row){
+    row.id = "tmp" + Date.now();
+    row.__tmp = true;
+    DATA[sheet].push(row);
+    return row;
   }
   function afterWrite(msg){
     return load().then(function(){ render(); toast(msg); })
@@ -1157,9 +1184,10 @@
         patch["ученик"] = patch["ученик"].trim();
         patch["заметка"] = note.value;
         patch["статус"] = pupilState(patch).k;
-        send("update","Ученики",{id:r.id, row:patch})
-          .then(function(){ pupilEdit = false; return afterWrite("Сохранено"); })
-          .catch(function(e){ toast("Ошибка: " + e.message); });
+        localPatch("Ученики", r.id, patch);
+        pupilEdit = false;
+        render();
+        bg(send("update","Ученики",{id:r.id, row:patch}), "Сохранено");
       });
       cancel.addEventListener("click", function(){ pupilEdit = false; render(); });
       acts.appendChild(save); acts.appendChild(cancel);
@@ -1191,11 +1219,14 @@
     pf.appendChild(padd);
     padd.addEventListener("click", function(){
       if(!amt.value){ toast("Сумма пустая"); return; }
-      send("add","Оплаты",{row:{
-        "дата":pday.value || today(), "ученик":r["ученик"],
-        "сумма":amt.value, "чек":chek.value, "заметка":""
-      }}).then(function(){ return afterWrite("Оплата записана"); })
-        .catch(function(e){ toast("Ошибка: " + e.message); });
+      var row = {"дата":pday.value || today(), "ученик":r["ученик"],
+                 "сумма":amt.value, "чек":chek.value, "заметка":""};
+      var copy = {}; Object.keys(row).forEach(function(k){ copy[k] = row[k]; });
+      localAdd("Оплаты", copy);
+      render();
+      bg(send("add","Оплаты",{row:row}).then(function(){
+        return load().then(render);
+      }), "Оплата записана");
     });
     ps.appendChild(pf);
     b.appendChild(ps);
@@ -1238,10 +1269,11 @@
         var del = el("button","link link-warn","удалить");
         var armed = false;
         ok.addEventListener("click", function(){
-          send("update","Оплаты",{id:row.id, row:{
-            "дата":fd.value, "сумма":fs.value, "чек":fc.value
-          }}).then(function(){ payEdit = null; return afterWrite("Оплата исправлена"); })
-            .catch(function(e){ toast("Ошибка: " + e.message); });
+          var patch = {"дата":fd.value, "сумма":fs.value, "чек":fc.value};
+          localPatch("Оплаты", row.id, patch);
+          payEdit = null;
+          render();
+          bg(send("update","Оплаты",{id:row.id, row:patch}), "Оплата исправлена");
         });
         no.addEventListener("click", function(){ payEdit = null; render(); });
         del.addEventListener("click", function(){
@@ -1251,9 +1283,10 @@
             setTimeout(function(){ armed = false; del.textContent = "удалить"; }, 4000);
             return;
           }
-          send("delete","Оплаты",{id:row.id})
-            .then(function(){ payEdit = null; return afterWrite("Оплата удалена"); })
-            .catch(function(e){ toast("Ошибка: " + e.message); });
+          localDrop("Оплаты", row.id);
+          payEdit = null;
+          render();
+          bg(send("delete","Оплаты",{id:row.id}), "Оплата удалена");
         });
         acts.appendChild(ok); acts.appendChild(no); acts.appendChild(del);
         c4.appendChild(acts); tr.appendChild(c4);
@@ -1263,9 +1296,14 @@
         tr.appendChild(el("td", null, row["сумма"]));
         tr.appendChild(mark(row["чек"]));
         var c5 = el("td");
-        var ed = el("button","link","правка");
-        ed.addEventListener("click", function(){ payEdit = row.id; render(); });
-        c5.appendChild(ed); tr.appendChild(c5);
+        if(row.__tmp){
+          c5.appendChild(el("span","muted","пишу…"));
+        } else {
+          var ed = el("button","link","правка");
+          ed.addEventListener("click", function(){ payEdit = row.id; render(); });
+          c5.appendChild(ed);
+        }
+        tr.appendChild(c5);
       }
       body.appendChild(tr);
     });
@@ -1290,9 +1328,14 @@
     form.appendChild(add);
     add.addEventListener("click", function(){
       if(!who.value.trim()) return;
-      send("add","Оплаты",{row:{"дата":day.value || today(),"ученик":who.value.trim(),"сумма":sum.value,"чек":chek.value}})
-        .then(function(){ who.value=""; sum.value=""; return afterWrite("Оплата записана"); })
-        .catch(function(e){ toast("Ошибка: " + e.message); });
+      var row = {"дата":day.value || today(), "ученик":who.value.trim(),
+                 "сумма":sum.value, "чек":chek.value};
+      var copy = {}; Object.keys(row).forEach(function(k){ copy[k] = row[k]; });
+      localAdd("Оплаты", copy);
+      render();
+      bg(send("add","Оплаты",{row:row}).then(function(){
+        return load().then(render);
+      }), "Оплата записана");
     });
     p.appendChild(form);
     w.appendChild(p);
