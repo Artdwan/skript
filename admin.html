@@ -70,14 +70,14 @@
   tr.sel td{background:var(--accent-soft)}
 
   /* выдвижная панель ученика */
-  .dback{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:40;opacity:0;
-         transition:opacity .18s ease}
-  .dback.on{opacity:1}
+  .dback{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:40;
+         animation:dfade .18s ease}
   .drawer{position:fixed;top:0;right:0;bottom:0;width:min(580px,100%);background:var(--card);
           border-left:1px solid var(--line);z-index:41;display:flex;flex-direction:column;
-          transform:translateX(102%);transition:transform .22s ease;
-          box-shadow:-20px 0 46px rgba(0,0,0,.45)}
-  .drawer.on{transform:none}
+          box-shadow:-20px 0 46px rgba(0,0,0,.45);animation:dslide .22s ease}
+  @keyframes dfade{from{opacity:0}to{opacity:1}}
+  @keyframes dslide{from{transform:translateX(102%)}to{transform:none}}
+  @media (prefers-reduced-motion:reduce){ .dback,.drawer{animation:none} }
   .dhead{display:flex;align-items:center;justify-content:space-between;gap:10px;flex:0 0 auto;
          padding:16px 18px;border-bottom:1px solid var(--line)}
   .dhead .t{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;
@@ -1171,10 +1171,6 @@
 
     d.appendChild(b);
     w.appendChild(d);
-
-    requestAnimationFrame(function(){
-      requestAnimationFrame(function(){ back.classList.add("on"); d.classList.add("on"); });
-    });
   }
 
   function mark(v){
