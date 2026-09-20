@@ -73,6 +73,11 @@
   td{padding:9px 10px 9px 0;border-top:1px solid var(--line);vertical-align:top}
   tr:hover td{background:var(--accent-soft)}
   tr.clickable{cursor:pointer}
+  .kv{display:grid;gap:14px 22px;grid-template-columns:repeat(auto-fit,minmax(170px,1fr))}
+  .kv .k{font:500 10.5px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+  .kv .v{font-size:15px;margin-top:5px;word-break:break-word}
+  .kv .v.dim{color:var(--muted)}
+  .kv-note{margin-top:16px;grid-template-columns:1fr}
   .tbl-wrap{overflow-x:auto}
 
   .pill{display:inline-block;font:500 12px/1 var(--sans);padding:5px 9px;border-radius:999px;
@@ -174,6 +179,7 @@
   var closedOnly = false;
   var dragId = null;
   var pupilOpen = null;
+  var pupilEdit = false;
 
   var app = document.getElementById("app");
 
@@ -310,7 +316,7 @@
       var n = countFor(t.id);
       if(n !== null){ var s = el("span","n", n); b.appendChild(s); }
       b.setAttribute("aria-selected", tab === t.id ? "true" : "false");
-      b.addEventListener("click", function(){ tab = t.id; pupilOpen = null; render(); });
+      b.addEventListener("click", function(){ tab = t.id; pupilOpen = null; pupilEdit = false; render(); });
       nav.appendChild(b);
     });
     var rb = el("button","tab","Обновить");
@@ -949,7 +955,7 @@
     rows.forEach(function(row){
       var tr = document.createElement("tr");
       tr.className = "clickable";
-      tr.addEventListener("click", function(){ pupilOpen = row.id; render(); });
+      tr.addEventListener("click", function(){ pupilOpen = row.id; pupilEdit = false; render(); });
       var nm = el("td");
       nm.appendChild(el("strong", null, row["ученик"]));
       if(row["заметка"]){
@@ -982,7 +988,7 @@
 
     var bar = el("div","bar");
     var back = el("button","btn btn-ghost btn-sm","← Все ученики");
-    back.addEventListener("click", function(){ pupilOpen = null; render(); });
+    back.addEventListener("click", function(){ pupilOpen = null; pupilEdit = false; render(); });
     bar.appendChild(back);
     w.appendChild(bar);
 
@@ -1010,54 +1016,88 @@
       tags.appendChild(el("span","pill pill-warn", r["статус"]));
     t.appendChild(tags);
 
-    var f = {};
-    f["ученик"]    = mkInp("text", "", r["ученик"]);
-    f["класс"]     = mkInp("text", "", r["класс"]);
-    f["предмет"]   = mkSel(PUPIL_SUBJ, r["предмет"]);
-    f["формат"]    = mkSel(PUPIL_FMT, r["формат"]);
-    f["группа"]    = mkSel(groupOpts(r["группа"]), r["группа"]);
-    f["абонемент"] = mkInp("number", "", r["абонемент"]);
-    f["родитель"]  = mkInp("text", "", r["родитель"]);
-    f["источник"]  = mkInp("text", "реклама, сарафан…", r["источник"]);
-    f["старт"]     = mkInp("text", "2025-09-01", r["старт"]);
-    f["discord"]   = mkSel(["нет","да"], r["discord"] || "нет");
-    f["статус"]    = mkSel(PUPIL_ST, r["статус"] || "учится");
-    var form = el("div","form");
-    [["Ученик","ученик"],["Класс","класс"],["Предмет","предмет"],["Формат","формат"],
-     ["Группа","группа"],["Абонемент","абонемент"],["Родитель","родитель"],
-     ["Источник","источник"],["Старт","старт"],["Discord","discord"],["Статус","статус"]]
-      .forEach(function(pair){ form.appendChild(fld(pair[0], f[pair[1]])); });
-    t.appendChild(form);
+    if(!pupilEdit){
+      var view = el("div","kv");
+      [["Класс", r["класс"]], ["Предмет", r["предмет"]], ["Формат", r["формат"]],
+       ["Группа", r["группа"]], ["Абонемент", r["абонемент"]], ["Родитель", r["родитель"]],
+       ["Источник", r["источник"]], ["Старт", r["старт"]],
+       ["Discord", r["discord"] || "нет"], ["Статус", r["статус"] || "учится"]]
+        .forEach(function(pair){
+          var cell = el("div");
+          cell.appendChild(el("div","k", pair[0]));
+          var val = String(pair[1] === undefined || pair[1] === null ? "" : pair[1]).trim();
+          cell.appendChild(el("div", val ? "v" : "v dim", val || "не указано"));
+          view.appendChild(cell);
+        });
+      t.appendChild(view);
 
-    var note = document.createElement("textarea");
-    note.rows = 2;
-    note.placeholder = "чем занимаемся, о чём помнить";
-    note.value = r["заметка"] || "";
-    var nl = el("label");
-    nl.style.display = "grid"; nl.style.gap = "4px";
-    nl.style.fontSize = "12.5px"; nl.style.color = "var(--muted)";
-    nl.style.marginTop = "10px";
-    nl.appendChild(el("span", null, "Заметка"));
-    nl.appendChild(note);
-    t.appendChild(nl);
+      var nb = el("div","kv kv-note");
+      var ncell = el("div");
+      ncell.appendChild(el("div","k","Заметка"));
+      var nv = String(r["заметка"] || "").trim();
+      ncell.appendChild(el("div", nv ? "v" : "v dim", nv || "пусто"));
+      nb.appendChild(ncell);
+      t.appendChild(nb);
 
-    var save = el("button","btn","Сохранить");
-    save.style.marginTop = "14px";
-    save.addEventListener("click", function(){
-      if(!f["ученик"].value.trim()){ toast("Имя не может быть пустым"); return; }
-      var patch = {};
-      Object.keys(f).forEach(function(k){ patch[k] = f[k].value; });
-      patch["ученик"] = patch["ученик"].trim();
-      patch["заметка"] = note.value;
-      send("update","Ученики",{id:r.id, row:patch})
-        .then(function(){ return afterWrite("Сохранено"); })
-        .catch(function(e){ toast("Ошибка: " + e.message); });
-    });
-    t.appendChild(save);
-    t.appendChild(el("p","col-hint",
-      "Оплаты привязаны к имени. Если переименовать ученика, старые оплаты останутся " +
-      "на прежнем имени — их придётся поправить в таблице."));
-    w.appendChild(t);
+      var edit = el("button","btn","Редактировать карточку");
+      edit.style.marginTop = "18px";
+      edit.addEventListener("click", function(){ pupilEdit = true; render(); });
+      t.appendChild(edit);
+      w.appendChild(t);
+    } else {
+      var f = {};
+      f["ученик"]    = mkInp("text", "", r["ученик"]);
+      f["класс"]     = mkInp("text", "", r["класс"]);
+      f["предмет"]   = mkSel(PUPIL_SUBJ, r["предмет"]);
+      f["формат"]    = mkSel(PUPIL_FMT, r["формат"]);
+      f["группа"]    = mkSel(groupOpts(r["группа"]), r["группа"]);
+      f["абонемент"] = mkInp("number", "", r["абонемент"]);
+      f["родитель"]  = mkInp("text", "", r["родитель"]);
+      f["источник"]  = mkInp("text", "реклама, сарафан…", r["источник"]);
+      f["старт"]     = mkInp("text", "2025-09-01", r["старт"]);
+      f["discord"]   = mkSel(["нет","да"], r["discord"] || "нет");
+      f["статус"]    = mkSel(PUPIL_ST, r["статус"] || "учится");
+      var form = el("div","form");
+      [["Ученик","ученик"],["Класс","класс"],["Предмет","предмет"],["Формат","формат"],
+       ["Группа","группа"],["Абонемент","абонемент"],["Родитель","родитель"],
+       ["Источник","источник"],["Старт","старт"],["Discord","discord"],["Статус","статус"]]
+        .forEach(function(pair){ form.appendChild(fld(pair[0], f[pair[1]])); });
+      t.appendChild(form);
+
+      var note = document.createElement("textarea");
+      note.rows = 2;
+      note.placeholder = "чем занимаемся, о чём помнить";
+      note.value = r["заметка"] || "";
+      var nl = el("label");
+      nl.style.display = "grid"; nl.style.gap = "4px";
+      nl.style.fontSize = "12.5px"; nl.style.color = "var(--muted)";
+      nl.style.marginTop = "10px";
+      nl.appendChild(el("span", null, "Заметка"));
+      nl.appendChild(note);
+      t.appendChild(nl);
+
+      var row2 = el("div","row-actions");
+      row2.style.marginTop = "14px";
+      var save = el("button","btn","Сохранить");
+      var cancel = el("button","btn btn-ghost","Отмена");
+      save.addEventListener("click", function(){
+        if(!f["ученик"].value.trim()){ toast("Имя не может быть пустым"); return; }
+        var patch = {};
+        Object.keys(f).forEach(function(k){ patch[k] = f[k].value; });
+        patch["ученик"] = patch["ученик"].trim();
+        patch["заметка"] = note.value;
+        send("update","Ученики",{id:r.id, row:patch})
+          .then(function(){ pupilEdit = false; return afterWrite("Сохранено"); })
+          .catch(function(e){ toast("Ошибка: " + e.message); });
+      });
+      cancel.addEventListener("click", function(){ pupilEdit = false; render(); });
+      row2.appendChild(save); row2.appendChild(cancel);
+      t.appendChild(row2);
+      t.appendChild(el("p","col-hint",
+        "Оплаты привязаны к имени. Если переименовать ученика, старые оплаты останутся " +
+        "на прежнем имени — их придётся поправить в таблице."));
+      w.appendChild(t);
+    }
 
     var pp = el("div","panel");
     pp.appendChild(el("h3", null, "Оплаты ученика"));
