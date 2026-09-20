@@ -870,6 +870,47 @@
   }
 
   function renderGroups(w){
+    /* ——— новая группа ——— */
+    var np = el("div","panel");
+    np.appendChild(el("h3", null, "Новая группа"));
+    var gf = el("div","form");
+    var gName = mkInp("text", "Мат9 (4)");
+    var gSubj = mkSel(DIR_SUBJ, "математика");
+    var gKl   = mkInp("text", "9");
+    var gFmt  = mkSel(usedVals(DATA["Группы"], "формат").concat(
+                        usedVals(DATA["Группы"], "формат").indexOf("группа") > -1 ? [] : ["группа"]),
+                      "группа");
+    var gDays = mkInp("text", "вт, чт 17:00");
+    var gTeach= mkInp("text", "кто ведёт");
+    var gAdd  = el("button","btn","Добавить");
+    [["Название",gName],["Предмет",gSubj],["Класс",gKl],["Формат",gFmt],
+     ["Дни",gDays],["Преподаватель",gTeach]].forEach(function(pair){
+      gf.appendChild(fld(pair[0], pair[1]));
+    });
+    gf.appendChild(gAdd);
+    gAdd.addEventListener("click", function(){
+      var nm = gName.value.trim();
+      if(!nm){ toast("Без названия не запишу"); return; }
+      if(DATA["Группы"].some(function(g){
+           return String(g["название"] || "").trim().toLowerCase() === nm.toLowerCase(); })){
+        toast("Такая группа уже есть"); return;
+      }
+      var row = {"название":nm, "предмет":gSubj.value, "класс":gKl.value.trim(),
+                 "формат":gFmt.value, "дни":gDays.value.trim(),
+                 "преподаватель":gTeach.value.trim(), "заметка":""};
+      localAdd("Группы", copyOf(row));
+      gName.value = ""; gKl.value = ""; gDays.value = ""; gTeach.value = "";
+      render();
+      bg(send("add","Группы",{row:row}).then(function(){
+        return load().then(render);
+      }), "Группа добавлена");
+    });
+    np.appendChild(gf);
+    np.appendChild(el("p","col-hint",
+      "Название группы — то же, что выбирается в направлении ученика. " +
+      "Дни и преподаватель нужны только для памяти, на расчёты не влияют."));
+    w.appendChild(np);
+
     var bySubj = {};
     DATA["Группы"].forEach(function(g){
       var s = g["предмет"] || "прочее";
@@ -881,7 +922,7 @@
       p.appendChild(el("h3", null, subj));
       bySubj[subj].sort(function(a,b){ return Number(a["класс"]) - Number(b["класс"]); })
         .forEach(function(g){
-          var r = el("div"); r.style.padding = "10px 0"; r.style.borderTop = "1px solid var(--line)";
+          var r = el("div","grow"); r.style.padding = "10px 0"; r.style.borderTop = "1px solid var(--line)";
           var line = el("div"); line.style.display = "flex"; line.style.gap = "10px";
           line.style.flexWrap = "wrap"; line.style.alignItems = "baseline";
           var nm = el("strong", null, g["название"]);
@@ -890,8 +931,35 @@
           var pl = pupilsOf(g["название"]);
           var cnt = el("span", pl.length ? "pill" : "pill pill-warn", pl.length + " из 7");
           line.appendChild(nm); line.appendChild(cl); line.appendChild(cnt);
+          if(g.__tmp){
+            line.appendChild(el("span","muted","пишу…"));
+          } else {
+            /* Удаление группы: два нажатия. Пока в ней есть ученики — не даём,
+               иначе их направления повиснут на несуществующей группе. */
+            var gd = el("button","link","удалить");
+            var armedG = false;
+            gd.addEventListener("click", function(){
+              if(pl.length){
+                toast("В группе " + pl.length + " — сначала переведи их в другую");
+                return;
+              }
+              if(!armedG){
+                armedG = true;
+                var past = DATA["Направления"].filter(function(d){
+                  return String(d["группа"] || "").trim() === String(g["название"] || "").trim();
+                }).length;
+                gd.textContent = past ? "точно удалить? в ней ещё " + past + " бывших"
+                                      : "точно удалить?";
+                return;
+              }
+              localDrop("Группы", g.id);
+              render();
+              bg(send("delete","Группы",{id:g.id}), "Группа удалена");
+            });
+            line.appendChild(gd);
+          }
           r.appendChild(line);
-          var days = el("div","muted", g["дни"]);
+          var days = el("div","muted", [g["дни"], g["преподаватель"]].filter(Boolean).join(" · "));
           days.style.fontSize = "13px"; days.style.fontFamily = "var(--mono)";
           r.appendChild(days);
           if(pl.length){
@@ -1541,10 +1609,35 @@
       });
       cancel.addEventListener("click", function(){ pupilEdit = false; render(); });
       acts.appendChild(save); acts.appendChild(cancel);
+      /* Удаление ученика: два нажатия, вместе с ним уходят его направления.
+         Оплаты остаются — это история, её стирать нельзя. */
+      var drop = el("button","link","Удалить ученика");
+      var armedP = false;
+      drop.addEventListener("click", function(){
+        var mineDirs = dirsOf(r["ученик"]);
+        if(!armedP){
+          armedP = true;
+          drop.textContent = "точно удалить" +
+            (mineDirs.length ? " вместе с направлениями (" + mineDirs.length + ")?" : "?");
+          return;
+        }
+        var paid = paidBy(r["ученик"]);
+        localDrop("Ученики", r.id);
+        mineDirs.forEach(function(x){ localDrop("Направления", x.id); });
+        pupilOpen = null; pupilEdit = false; dirEdit = null; dirAdd = false;
+        render();
+        bg(send("delete","Ученики",{id:r.id}).then(function(){
+          return mineDirs.reduce(function(chain, x){
+            return chain.then(function(){ return send("delete","Направления",{id:x.id}); });
+          }, Promise.resolve());
+        }), paid ? "Ученик удалён, оплаты остались в истории" : "Ученик удалён");
+      });
+      acts.appendChild(drop);
       b.appendChild(acts);
       b.appendChild(el("p","col-hint",
         "Оплаты привязаны к имени. Если переименовать ученика, старые оплаты останутся " +
-        "на прежнем имени — их придётся поправить в таблице."));
+        "на прежнем имени — их придётся поправить в таблице. При удалении ученика оплаты " +
+        "тоже остаются: это история."));
     }
 
     b.appendChild(dirSection(r));
