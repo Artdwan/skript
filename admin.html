@@ -90,6 +90,10 @@
   .dsec-h{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;
           color:var(--muted);margin-bottom:12px}
   .drawer .form{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
+  .checks{display:flex;gap:16px;flex-wrap:wrap;align-items:center;min-height:44px}
+  .form .checks label, .checks label{display:flex;gap:7px;align-items:center;font-size:15px;
+                color:var(--ink);cursor:pointer;margin:0}
+  .checks input[type=checkbox]{width:17px;height:17px;margin:0;accent-color:var(--accent)}
   .kv{display:grid;gap:14px 22px;grid-template-columns:repeat(auto-fit,minmax(170px,1fr))}
   .kv .k{font:500 10.5px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
   .kv .v{font-size:15px;margin-top:5px;word-break:break-word}
@@ -933,6 +937,47 @@
     return v.toLowerCase() === "нет" ? "" : v;
   }
 
+  /* Форматов у ученика может быть несколько: «группа», «индивидуально» или оба. */
+  function fmtList(v){
+    return String(v === undefined || v === null ? "" : v)
+      .split(",").map(function(x){ return x.trim(); }).filter(Boolean);
+  }
+  function hasFmt(r, f){ return fmtList(r["формат"]).indexOf(f) > -1; }
+  function indPrice(r){
+    var c = String(r["инд_цена"] || "").trim();
+    /* у старых записей цена индивидуального занятия лежала в «абонементе» */
+    if(!c && !hasFmt(r, "группа")) c = String(r["абонемент"] || "").trim();
+    return c;
+  }
+  function priceText(r){
+    var out = [];
+    if(hasFmt(r, "группа") && String(r["абонемент"] || "").trim())
+      out.push(r["абонемент"] + " в месяц");
+    if(hasFmt(r, "индивидуально")){
+      var c = indPrice(r), m = String(r["инд_минуты"] || "").trim();
+      if(c) out.push(c + " за занятие" + (m ? " по " + m + " мин" : ""));
+    }
+    if(!out.length && String(r["абонемент"] || "").trim()) out.push(String(r["абонемент"]));
+    return out;
+  }
+  function fmtChecks(value){
+    var box = el("div","checks");
+    var boxes = {};
+    PUPIL_FMT.forEach(function(f){
+      var l = el("label");
+      var c = document.createElement("input");
+      c.type = "checkbox";
+      c.checked = fmtList(value).indexOf(f) > -1;
+      l.appendChild(c); l.appendChild(document.createTextNode(f));
+      box.appendChild(l);
+      boxes[f] = c;
+    });
+    return {box:box, boxes:boxes,
+            value:function(){
+              return PUPIL_FMT.filter(function(f){ return boxes[f].checked; }).join(", ");
+            }};
+  }
+
   function pupilById(id){
     var r = DATA["Ученики"].filter(function(p){ return String(p.id) === String(id); });
     return r.length ? r[0] : null;
@@ -979,16 +1024,32 @@
     var fName = mkInp("text", "имя как в журнале");
     var fKl   = mkInp("text", "9");
     var fSub  = mkSel(PUPIL_SUBJ, "математика");
-    var fFmt  = mkSel(PUPIL_FMT, "группа");
+    var fFmt  = fmtChecks("группа");
     var fGrp  = mkSel(groupOpts(""), "");
     var fAb   = mkInp("number", "260");
+    var fPr   = mkInp("number", "цена");
+    var fMin  = mkInp("number", "мин");
     var fPar  = mkInp("text", "имя родителя");
     var fSt   = mkInp("date", "", today());
     var add   = el("button","btn","Добавить");
-    [["Ученик",fName],["Класс",fKl],["Предмет",fSub],["Формат",fFmt],
-     ["Группа",fGrp],["Абонемент",fAb],["Родитель",fPar],["Старт",fSt]].forEach(function(pair){
-      form.appendChild(fld(pair[0], pair[1]));
+    var wraps = {};
+    [["Ученик",fName],["Класс",fKl],["Предмет",fSub],["Формат",fFmt.box],
+     ["Группа",fGrp],["Абонемент",fAb],["Цена за занятие",fPr],["Длительность, мин",fMin],
+     ["Родитель",fPar],["Старт",fSt]].forEach(function(pair){
+      var l = fld(pair[0], pair[1]);
+      if(pair[0] === "Формат") l.style.gridColumn = "span 2";
+      wraps[pair[0]] = l;
+      form.appendChild(l);
     });
+    function syncNew(){
+      var g = fFmt.boxes["группа"].checked, i = fFmt.boxes["индивидуально"].checked;
+      wraps["Группа"].style.display = g ? "" : "none";
+      wraps["Абонемент"].style.display = g ? "" : "none";
+      wraps["Цена за занятие"].style.display = i ? "" : "none";
+      wraps["Длительность, мин"].style.display = i ? "" : "none";
+    }
+    PUPIL_FMT.forEach(function(f){ fFmt.boxes[f].addEventListener("change", syncNew); });
+    syncNew();
     form.appendChild(add);
     add.addEventListener("click", function(){
       var nm = fName.value.trim();
@@ -997,14 +1058,19 @@
         return String(r["ученик"]).toLowerCase() === nm.toLowerCase();
       });
       if(dup.length){ toast("Такой ученик уже есть"); return; }
+      var fmt = fFmt.value();
+      if(!fmt){ toast("Отметь хотя бы один формат"); return; }
+      var g = fFmt.boxes["группа"].checked, ind = fFmt.boxes["индивидуально"].checked;
       send("add","Ученики",{row:{
-        "ученик":nm, "класс":fKl.value.trim(), "предмет":fSub.value, "формат":fFmt.value,
-        "группа":fGrp.value, "абонемент":fAb.value, "родитель":fPar.value.trim(),
+        "ученик":nm, "класс":fKl.value.trim(), "предмет":fSub.value, "формат":fmt,
+        "группа":g ? fGrp.value : "", "абонемент":g ? fAb.value : "",
+        "инд_цена":ind ? fPr.value : "", "инд_минуты":ind ? fMin.value : "",
+        "родитель":fPar.value.trim(),
         "источник":"", "старт":fSt.value || today(), "discord":"", "holst":"",
         "статус":"учится", "заметка":"", "перерыв_с":"", "перерыв_по":"", "окончание":""
       }}).then(function(){
         fName.value = ""; fKl.value = ""; fAb.value = ""; fPar.value = "";
-        fSt.value = today();
+        fPr.value = ""; fMin.value = ""; fSt.value = today();
         return afterWrite("Ученик добавлен");
       }).catch(function(e){ toast("Ошибка: " + e.message); });
     });
@@ -1023,7 +1089,7 @@
     t.appendChild(el("p","col-hint","Нажми на строку — справа выедет карточка ученика."));
     var tw = el("div","tbl-wrap");
     var tb = document.createElement("table");
-    tb.appendChild(head(["Ученик","Кл","Предмет","Формат","Группа","Абонемент","Оплачено","Родитель","Discord"]));
+    tb.appendChild(head(["Ученик","Кл","Предмет","Формат","Группа","Цена","Оплачено","Родитель","Discord"]));
     var body = document.createElement("tbody");
     rows.forEach(function(row){
       var tr = document.createElement("tr");
@@ -1043,11 +1109,17 @@
       tr.appendChild(nm);
       tr.appendChild(el("td","muted", row["класс"]));
       tr.appendChild(el("td","muted", row["предмет"]));
-      tr.appendChild(el("td", null, row["формат"]));
+      tr.appendChild(el("td", null, fmtList(row["формат"]).join(", ")));
       tr.appendChild(el("td","muted", row["группа"]));
       var ab = el("td");
-      var unit = row["формат"] === "группа" ? " в месяц" : " за занятие";
-      ab.appendChild(el("span","pill", row["абонемент"] + unit));
+      var pt = priceText(row);
+      if(!pt.length) ab.appendChild(el("span","muted","—"));
+      pt.forEach(function(x, i){
+        var sp = el("span","pill", x);
+        if(i) sp.style.marginTop = "4px";
+        sp.style.display = "block";
+        ab.appendChild(sp);
+      });
       tr.appendChild(ab);
       var pd = el("td");
       var sum = paidBy(row["ученик"]);
@@ -1092,15 +1164,15 @@
     h.style.font = "600 24px/1.2 var(--display)";
     b.appendChild(h);
     var meta = el("p","muted",
-      [r["класс"] ? r["класс"] + " класс" : "", r["предмет"], r["формат"], r["группа"]]
+      [r["класс"] ? r["класс"] + " класс" : "", r["предмет"],
+       fmtList(r["формат"]).join(" и "), r["группа"]]
         .filter(Boolean).join(" · "));
     meta.style.margin = "4px 0 12px";
     b.appendChild(meta);
 
     var tags = el("div","card-tags");
     tags.style.margin = "0 0 16px";
-    var unit = r["формат"] === "группа" ? " в месяц" : " за занятие";
-    tags.appendChild(el("span","pill", "абонемент " + r["абонемент"] + unit));
+    priceText(r).forEach(function(x){ tags.appendChild(el("span","pill", x)); });
     tags.appendChild(el("span", sum ? "pill" : "pill pill-warn",
       sum ? "оплачено " + sum : "нет оплат"));
     var stt = pupilState(r);
@@ -1109,11 +1181,23 @@
 
     if(!pupilEdit){
       var view = el("div","kv");
-      [["Класс", r["класс"]], ["Предмет", r["предмет"]], ["Формат", r["формат"]],
-       ["Группа", r["группа"]], ["Абонемент", r["абонемент"]], ["Родитель", r["родитель"]],
+      [["Класс", r["класс"]], ["Предмет", r["предмет"]],
+       ["Формат", fmtList(r["формат"]).join(", ")],
+       ["Группа", hasFmt(r,"группа") ? r["группа"] : ""],
+       ["Абонемент", hasFmt(r,"группа") ? r["абонемент"] : ""],
+       ["Цена за занятие", hasFmt(r,"индивидуально") ? indPrice(r) : ""],
+       ["Длительность, мин", hasFmt(r,"индивидуально") ? r["инд_минуты"] : ""],
+       ["Родитель", r["родитель"]],
        ["Источник", r["источник"]], ["Discord", discordText(r["discord"])],
        ["Старт", r["старт"]], ["Перерыв с", r["перерыв_с"]],
        ["Перерыв по", r["перерыв_по"]], ["Окончание", r["окончание"]]]
+        .filter(function(pair){
+          /* поля чужого формата в просмотре не показываем */
+          if(pair[0] === "Группа" || pair[0] === "Абонемент") return hasFmt(r,"группа");
+          if(pair[0] === "Цена за занятие" || pair[0] === "Длительность, мин")
+            return hasFmt(r,"индивидуально");
+          return true;
+        })
         .forEach(function(pair){
           var cell = el("div");
           cell.appendChild(el("div","k", pair[0]));
@@ -1140,9 +1224,11 @@
       f["ученик"]    = mkInp("text", "", r["ученик"]);
       f["класс"]     = mkInp("text", "", r["класс"]);
       f["предмет"]   = mkSel(PUPIL_SUBJ, r["предмет"]);
-      f["формат"]    = mkSel(PUPIL_FMT, r["формат"]);
+      var fm = fmtChecks(r["формат"]);
       f["группа"]    = mkSel(groupOpts(r["группа"]), r["группа"]);
       f["абонемент"] = mkInp("number", "", r["абонемент"]);
+      f["инд_цена"]  = mkInp("number", "цена", indPrice(r));
+      f["инд_минуты"]= mkInp("number", "мин", r["инд_минуты"]);
       f["родитель"]  = mkInp("text", "", r["родитель"]);
       f["источник"]  = mkInp("text", "реклама, сарафан…", r["источник"]);
       f["discord"]   = mkInp("text", "ник в дискорде", discordText(r["discord"]));
@@ -1151,11 +1237,31 @@
       f["перерыв_по"]= mkInp("date", "", r["перерыв_по"]);
       f["окончание"] = mkInp("date", "", r["окончание"]);
       var form2 = el("div","form");
-      [["Ученик","ученик"],["Класс","класс"],["Предмет","предмет"],["Формат","формат"],
-       ["Группа","группа"],["Абонемент","абонемент"],["Родитель","родитель"],
+      var wr = {};
+      [["Ученик","ученик"],["Класс","класс"],["Предмет","предмет"]]
+        .forEach(function(pair){ form2.appendChild(fld(pair[0], f[pair[1]])); });
+      var fmWrap = fld("Формат", fm.box);
+      fmWrap.style.gridColumn = "span 2";
+      form2.appendChild(fmWrap);
+      [["Группа","группа"],["Абонемент","абонемент"],
+       ["Цена за занятие","инд_цена"],["Длительность, мин","инд_минуты"],
+       ["Родитель","родитель"],
        ["Источник","источник"],["Discord","discord"],["Старт","старт"],
        ["Перерыв с","перерыв_с"],["Перерыв по","перерыв_по"],["Окончание","окончание"]]
-        .forEach(function(pair){ form2.appendChild(fld(pair[0], f[pair[1]])); });
+        .forEach(function(pair){
+          var l = fld(pair[0], f[pair[1]]);
+          wr[pair[0]] = l;
+          form2.appendChild(l);
+        });
+      function syncCard(){
+        var g = fm.boxes["группа"].checked, i = fm.boxes["индивидуально"].checked;
+        wr["Группа"].style.display = g ? "" : "none";
+        wr["Абонемент"].style.display = g ? "" : "none";
+        wr["Цена за занятие"].style.display = i ? "" : "none";
+        wr["Длительность, мин"].style.display = i ? "" : "none";
+      }
+      PUPIL_FMT.forEach(function(x){ fm.boxes[x].addEventListener("change", syncCard); });
+      syncCard();
       b.appendChild(form2);
       b.appendChild(el("p","col-hint",
         "Статус считается сам: до старта — «начнёт», внутри перерыва — «перерыв», " +
@@ -1179,9 +1285,13 @@
       var cancel = el("button","btn btn-ghost","Отмена");
       save.addEventListener("click", function(){
         if(!f["ученик"].value.trim()){ toast("Имя не может быть пустым"); return; }
+        if(!fm.value()){ toast("Отметь хотя бы один формат"); return; }
         var patch = {};
         Object.keys(f).forEach(function(k){ patch[k] = f[k].value; });
         patch["ученик"] = patch["ученик"].trim();
+        patch["формат"] = fm.value();
+        if(!fm.boxes["группа"].checked){ patch["группа"] = ""; patch["абонемент"] = ""; }
+        if(!fm.boxes["индивидуально"].checked){ patch["инд_цена"] = ""; patch["инд_минуты"] = ""; }
         patch["заметка"] = note.value;
         patch["статус"] = pupilState(patch).k;
         localPatch("Ученики", r.id, patch);
@@ -1210,7 +1320,8 @@
     var pf = el("div","form");
     pf.style.marginTop = "12px";
     var pday = mkInp("date", "", today());
-    var amt  = mkInp("number", String(r["абонемент"] || ""));
+    var amt  = mkInp("number", hasFmt(r,"группа") ? String(r["абонемент"] || "")
+                                                   : String(indPrice(r) || ""));
     var chek = mkSel(["нет","да"], "нет");
     var padd = el("button","btn","Записать оплату");
     [["Дата",pday],["Сумма",amt],["Чек",chek]].forEach(function(pair){
