@@ -156,6 +156,16 @@
 
   .form{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));align-items:end}
   .form label{display:grid;gap:4px;font-size:12.5px;color:var(--muted)}
+
+  /* панель фильтров над таблицей */
+  .filters{display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin:12px 0 16px;
+           padding:13px;border:1px solid var(--line);border-radius:12px;background:var(--paper)}
+  .filters label{display:grid;gap:4px;font-size:12.5px;color:var(--muted);margin:0}
+  .filters input,.filters select{min-width:132px}
+  .filters .q input{min-width:200px}
+  .filters .tail{flex:1 0 100%;display:flex;gap:12px;align-items:center;
+                 justify-content:flex-end;margin-top:2px}
+  .filters .cnt{font-size:12.5px;color:var(--muted);white-space:nowrap}
   .toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:var(--ink);
          color:var(--paper);padding:11px 16px;border-radius:999px;font-size:14px;opacity:0;
          transition:opacity .2s;pointer-events:none;z-index:50}
@@ -202,6 +212,7 @@
   var pupilOpen = null;
   var pupilEdit = false;
   var payEdit = null;
+  var pupilF = {q:"", subj:"", klass:"", fmt:"", group:"", st:""};
 
   var app = document.getElementById("app");
 
@@ -978,6 +989,52 @@
             }};
   }
 
+  /* ——— фильтры на вкладке «Ученики» ——— */
+
+  var PUPIL_ST = ["учится", "ждём", "пауза", "ушёл"];
+
+  function pupilMatch(r){
+    var f = pupilF;
+    if(f.subj  && String(r["предмет"] || "").trim() !== f.subj)  return false;
+    if(f.klass && String(r["класс"]   || "").trim() !== f.klass) return false;
+    if(f.fmt   && !hasFmt(r, f.fmt))                             return false;
+    if(f.group && String(r["группа"]  || "").trim() !== f.group) return false;
+    if(f.st    && pupilState(r).k !== f.st)                      return false;
+    if(f.q){
+      var hay = ["ученик","родитель","заметка","группа","discord","источник","предмет"]
+        .map(function(k){ return String(r[k] === undefined || r[k] === null ? "" : r[k]); })
+        .join(" ").toLowerCase();
+      if(hay.indexOf(f.q.toLowerCase()) < 0) return false;
+    }
+    return true;
+  }
+  function pupilFOn(){
+    return !!(pupilF.q || pupilF.subj || pupilF.klass || pupilF.fmt || pupilF.group || pupilF.st);
+  }
+  /* выпадашка фильтра: пустое значение читается как «все» */
+  function mkFlt(list, val){
+    var s = document.createElement("select");
+    [""].concat(list).forEach(function(o){
+      var e = document.createElement("option");
+      e.value = o; e.textContent = o === "" ? "все" : o;
+      s.appendChild(e);
+    });
+    s.value = String(val || "");
+    if(s.selectedIndex < 0) s.value = "";
+    return s;
+  }
+  /* собирает встречающиеся в данных значения одного поля */
+  function usedVals(rows, field, num){
+    var out = [];
+    rows.forEach(function(r){
+      var v = String(r[field] === undefined || r[field] === null ? "" : r[field]).trim();
+      if(v && out.indexOf(v) < 0) out.push(v);
+    });
+    out.sort(num ? function(a,b){ return Number(a) - Number(b); }
+                 : function(a,b){ return a.localeCompare(b, "ru"); });
+    return out;
+  }
+
   function pupilById(id){
     var r = DATA["Ученики"].filter(function(p){ return String(p.id) === String(id); });
     return r.length ? r[0] : null;
@@ -1082,15 +1139,56 @@
 
     var t = el("div","panel");
     t.appendChild(el("h3", null, "Ученики"));
-    var rows = DATA["Ученики"].slice().sort(function(a,b){
+    var all = DATA["Ученики"].slice().sort(function(a,b){
       return Number(a["класс"]) - Number(b["класс"]) || String(a["ученик"]).localeCompare(String(b["ученик"]));
     });
-    if(!rows.length){ t.appendChild(el("p","empty","Пока пусто.")); w.appendChild(t); return; }
+    if(!all.length){ t.appendChild(el("p","empty","Пока пусто.")); w.appendChild(t); return; }
     t.appendChild(el("p","col-hint","Нажми на строку — справа выедет карточка ученика."));
+
+    /* ——— панель фильтров ——— */
+    var flt = el("div","filters");
+    var fQ  = mkInp("text", "имя, родитель, заметка", pupilF.q);
+    var fSu = mkFlt(usedVals(all, "предмет"), pupilF.subj);
+    var fKl = mkFlt(usedVals(all, "класс", true), pupilF.klass);
+    var fFm = mkFlt(PUPIL_FMT, pupilF.fmt);
+    var fGr = mkFlt(usedVals(all, "группа"), pupilF.group);
+    var fSt = mkFlt(PUPIL_ST, pupilF.st);
+    var qw = fld("Поиск", fQ); qw.className = "q";
+    [qw, fld("Предмет", fSu), fld("Класс", fKl), fld("Формат", fFm),
+     fld("Группа", fGr), fld("Статус", fSt)].forEach(function(l){ flt.appendChild(l); });
+    var tail = el("div","tail");
+    var cnt = el("span","cnt");
+    var reset = el("button","btn btn-ghost btn-sm","Сбросить");
+    reset.addEventListener("click", function(){
+      pupilF = {q:"", subj:"", klass:"", fmt:"", group:"", st:""};
+      fQ.value = ""; fSu.value = ""; fKl.value = ""; fFm.value = ""; fGr.value = ""; fSt.value = "";
+      fill();
+    });
+    tail.appendChild(cnt); tail.appendChild(reset);
+    flt.appendChild(tail);
+    fQ.addEventListener("input",  function(){ pupilF.q     = fQ.value.trim();  fill(); });
+    fSu.addEventListener("change",function(){ pupilF.subj  = fSu.value; fill(); });
+    fKl.addEventListener("change",function(){ pupilF.klass = fKl.value; fill(); });
+    fFm.addEventListener("change",function(){ pupilF.fmt   = fFm.value; fill(); });
+    fGr.addEventListener("change",function(){ pupilF.group = fGr.value; fill(); });
+    fSt.addEventListener("change",function(){ pupilF.st    = fSt.value; fill(); });
+    t.appendChild(flt);
+
     var tw = el("div","tbl-wrap");
     var tb = document.createElement("table");
     tb.appendChild(head(["Ученик","Кл","Предмет","Формат","Группа","Цена","Оплачено","Родитель","Discord"]));
     var body = document.createElement("tbody");
+    function fill(){
+    body.innerHTML = "";
+    var rows = all.filter(pupilMatch);
+    cnt.textContent = pupilFOn() ? ("показано " + rows.length + " из " + all.length)
+                                 : ("всего " + all.length);
+    if(!rows.length){
+      var tr0 = document.createElement("tr");
+      var td0 = el("td","empty","Под фильтры никто не подошёл.");
+      td0.colSpan = 9; tr0.appendChild(td0); body.appendChild(tr0);
+      return;
+    }
     rows.forEach(function(row){
       var tr = document.createElement("tr");
       tr.className = "clickable" + (String(pupilOpen) === String(row.id) ? " sel" : "");
@@ -1130,6 +1228,8 @@
       tr.appendChild(el("td", dc ? null : "muted", dc || "—"));
       body.appendChild(tr);
     });
+    }
+    fill();
     tb.appendChild(body); tw.appendChild(tb); t.appendChild(tw);
     w.appendChild(t);
 
