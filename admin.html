@@ -197,6 +197,7 @@
   var dragId = null;
   var pupilOpen = null;
   var pupilEdit = false;
+  var payEdit = null;
 
   var app = document.getElementById("app");
 
@@ -337,7 +338,7 @@
       var n = countFor(t.id);
       if(n !== null){ var s = el("span","n", n); b.appendChild(s); }
       b.setAttribute("aria-selected", tab === t.id ? "true" : "false");
-      b.addEventListener("click", function(){ tab = t.id; pupilOpen = null; pupilEdit = false; render(); });
+      b.addEventListener("click", function(){ tab = t.id; pupilOpen = null; pupilEdit = false; payEdit = null; render(); });
       nav.appendChild(b);
     });
     var rb = el("button","tab","Обновить");
@@ -1000,7 +1001,7 @@
     rows.forEach(function(row){
       var tr = document.createElement("tr");
       tr.className = "clickable" + (String(pupilOpen) === String(row.id) ? " sel" : "");
-      tr.addEventListener("click", function(){ pupilOpen = row.id; pupilEdit = false; render(); });
+      tr.addEventListener("click", function(){ pupilOpen = row.id; pupilEdit = false; payEdit = null; render(); });
       var nm = el("td");
       nm.appendChild(el("strong", null, row["ученик"]));
       var stt = pupilState(row);
@@ -1038,7 +1039,7 @@
 
   function closeDrawer(){
     if(!pupilOpen) return;
-    pupilOpen = null; pupilEdit = false; render();
+    pupilOpen = null; pupilEdit = false; payEdit = null; render();
   }
 
   function renderPupilDrawer(w, id){
@@ -1174,36 +1175,24 @@
     if(!mine.length){
       ps.appendChild(el("p","empty","Оплат пока нет."));
     } else {
-      var tw2 = el("div","tbl-wrap");
-      var tb2 = document.createElement("table");
-      tb2.appendChild(head(["Дата","Месяц","Сумма","Чек"]));
-      var b2 = document.createElement("tbody");
-      mine.forEach(function(o){
-        var tr = document.createElement("tr");
-        tr.appendChild(el("td","muted", o["дата"]));
-        tr.appendChild(el("td", null, o["месяц"]));
-        tr.appendChild(el("td", null, o["сумма"]));
-        tr.appendChild(el("td","muted", o["чек"]));
-        b2.appendChild(tr);
-      });
-      tb2.appendChild(b2); tw2.appendChild(tb2); ps.appendChild(tw2);
-      ps.appendChild(el("p","col-hint", "Всего оплачено: " + sum));
+      ps.appendChild(payTable(mine, false));
+      ps.appendChild(el("p","col-hint", "Всего оплачено: " + sum +
+        ". «Правка» открывает строку: можно поменять дату, сумму и чек или удалить оплату."));
     }
     var pf = el("div","form");
     pf.style.marginTop = "12px";
     var pday = mkInp("date", "", today());
-    var mon  = mkInp("text", "сентябрь");
     var amt  = mkInp("number", String(r["абонемент"] || ""));
     var chek = mkSel(["нет","да"], "нет");
     var padd = el("button","btn","Записать оплату");
-    [["Дата",pday],["Месяц",mon],["Сумма",amt],["Чек",chek]].forEach(function(pair){
+    [["Дата",pday],["Сумма",amt],["Чек",chek]].forEach(function(pair){
       pf.appendChild(fld(pair[0], pair[1]));
     });
     pf.appendChild(padd);
     padd.addEventListener("click", function(){
       if(!amt.value){ toast("Сумма пустая"); return; }
       send("add","Оплаты",{row:{
-        "дата":pday.value || today(), "ученик":r["ученик"], "месяц":mon.value.trim(),
+        "дата":pday.value || today(), "ученик":r["ученик"],
         "сумма":amt.value, "чек":chek.value, "заметка":""
       }}).then(function(){ return afterWrite("Оплата записана"); })
         .catch(function(e){ toast("Ошибка: " + e.message); });
@@ -1224,24 +1213,84 @@
 
   /* ——— Оплаты ——— */
 
+  /* Таблица оплат с правкой и удалением. withPupil — показывать колонку «Ученик». */
+  function payTable(rows, withPupil){
+    var tw = el("div","tbl-wrap");
+    var tb = document.createElement("table");
+    var cols = withPupil ? ["Дата","Ученик","Сумма","Чек",""] : ["Дата","Сумма","Чек",""];
+    tb.appendChild(head(cols));
+    var body = document.createElement("tbody");
+    rows.forEach(function(row){
+      var tr = document.createElement("tr");
+      if(String(payEdit) === String(row.id)){
+        var fd = mkInp("date", "", row["дата"]);
+        var fs = mkInp("number", "", row["сумма"]);
+        var fc = mkSel(["нет","да"], String(row["чек"] || "нет"));
+        fd.style.minWidth = "152px"; fs.style.minWidth = "88px"; fc.style.minWidth = "84px";
+        var c1 = el("td"); c1.appendChild(fd); tr.appendChild(c1);
+        if(withPupil) tr.appendChild(el("td","muted", row["ученик"]));
+        var c2 = el("td"); c2.appendChild(fs); tr.appendChild(c2);
+        var c3 = el("td"); c3.appendChild(fc); tr.appendChild(c3);
+        var c4 = el("td");
+        var acts = el("div","row-actions");
+        var ok = el("button","btn btn-sm","Сохранить");
+        var no = el("button","btn btn-ghost btn-sm","Отмена");
+        var del = el("button","link link-warn","удалить");
+        var armed = false;
+        ok.addEventListener("click", function(){
+          send("update","Оплаты",{id:row.id, row:{
+            "дата":fd.value, "сумма":fs.value, "чек":fc.value
+          }}).then(function(){ payEdit = null; return afterWrite("Оплата исправлена"); })
+            .catch(function(e){ toast("Ошибка: " + e.message); });
+        });
+        no.addEventListener("click", function(){ payEdit = null; render(); });
+        del.addEventListener("click", function(){
+          if(!armed){
+            armed = true;
+            del.textContent = "точно удалить?";
+            setTimeout(function(){ armed = false; del.textContent = "удалить"; }, 4000);
+            return;
+          }
+          send("delete","Оплаты",{id:row.id})
+            .then(function(){ payEdit = null; return afterWrite("Оплата удалена"); })
+            .catch(function(e){ toast("Ошибка: " + e.message); });
+        });
+        acts.appendChild(ok); acts.appendChild(no); acts.appendChild(del);
+        c4.appendChild(acts); tr.appendChild(c4);
+      } else {
+        tr.appendChild(el("td","muted", row["дата"] || "—"));
+        if(withPupil) tr.appendChild(el("td", null, row["ученик"]));
+        tr.appendChild(el("td", null, row["сумма"]));
+        tr.appendChild(mark(row["чек"]));
+        var c5 = el("td");
+        var ed = el("button","link","правка");
+        ed.addEventListener("click", function(){ payEdit = row.id; render(); });
+        c5.appendChild(ed); tr.appendChild(c5);
+      }
+      body.appendChild(tr);
+    });
+    tb.appendChild(body); tw.appendChild(tb);
+    return tw;
+  }
+
+
   function renderPay(w){
     var p = el("div","panel");
     p.appendChild(el("h3", null, "Новая оплата"));
     var form = el("div","form");
     var day = document.createElement("input"); day.type="date"; day.value = today();
     var who = document.createElement("input"); who.type="text"; who.placeholder="ученик";
-    var mon = document.createElement("input"); mon.type="text"; mon.placeholder="сентябрь";
     var sum = document.createElement("input"); sum.type="number"; sum.placeholder="260";
     var chek = document.createElement("select");
     ["да","нет"].forEach(function(s){ var o=document.createElement("option"); o.value=s; o.textContent=s; chek.appendChild(o); });
     var add = el("button","btn","Записать");
-    [["Дата",day],["Ученик",who],["Месяц",mon],["Сумма",sum],["Чек",chek]].forEach(function(pair){
+    [["Дата",day],["Ученик",who],["Сумма",sum],["Чек",chek]].forEach(function(pair){
       var l = el("label"); l.appendChild(el("span",null,pair[0])); l.appendChild(pair[1]); form.appendChild(l);
     });
     form.appendChild(add);
     add.addEventListener("click", function(){
       if(!who.value.trim()) return;
-      send("add","Оплаты",{row:{"дата":day.value || today(),"ученик":who.value.trim(),"месяц":mon.value.trim(),"сумма":sum.value,"чек":chek.value}})
+      send("add","Оплаты",{row:{"дата":day.value || today(),"ученик":who.value.trim(),"сумма":sum.value,"чек":chek.value}})
         .then(function(){ who.value=""; sum.value=""; return afterWrite("Оплата записана"); })
         .catch(function(e){ toast("Ошибка: " + e.message); });
     });
@@ -1252,20 +1301,9 @@
     t.appendChild(el("h3", null, "Оплаты"));
     var rows = DATA["Оплаты"].slice().reverse();
     if(!rows.length){ t.appendChild(el("p","empty","Пока пусто.")); w.appendChild(t); return; }
-    var tw = el("div","tbl-wrap");
-    var tb = document.createElement("table");
-    tb.appendChild(head(["Дата","Ученик","Месяц","Сумма","Чек"]));
-    var body = document.createElement("tbody");
-    rows.forEach(function(row){
-      var tr = document.createElement("tr");
-      tr.appendChild(el("td","muted", row["дата"]));
-      tr.appendChild(el("td", null, row["ученик"]));
-      tr.appendChild(el("td", null, row["месяц"]));
-      tr.appendChild(el("td", null, row["сумма"]));
-      tr.appendChild(mark(row["чек"]));
-      body.appendChild(tr);
-    });
-    tb.appendChild(body); tw.appendChild(tb); t.appendChild(tw);
+    t.appendChild(payTable(rows, true));
+    t.appendChild(el("p","col-hint",
+      "«Правка» открывает строку: можно поменять дату, сумму и чек или удалить оплату."));
     w.appendChild(t);
   }
 
