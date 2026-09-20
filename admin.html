@@ -72,6 +72,7 @@
      color:var(--muted);padding:0 10px 8px 0;white-space:nowrap}
   td{padding:9px 10px 9px 0;border-top:1px solid var(--line);vertical-align:top}
   tr:hover td{background:var(--accent-soft)}
+  tr.clickable{cursor:pointer}
   .tbl-wrap{overflow-x:auto}
 
   .pill{display:inline-block;font:500 12px/1 var(--sans);padding:5px 9px;border-radius:999px;
@@ -172,6 +173,7 @@
   var period = "all";
   var closedOnly = false;
   var dragId = null;
+  var pupilOpen = null;
 
   var app = document.getElementById("app");
 
@@ -308,7 +310,7 @@
       var n = countFor(t.id);
       if(n !== null){ var s = el("span","n", n); b.appendChild(s); }
       b.setAttribute("aria-selected", tab === t.id ? "true" : "false");
-      b.addEventListener("click", function(){ tab = t.id; render(); });
+      b.addEventListener("click", function(){ tab = t.id; pupilOpen = null; render(); });
       nav.appendChild(b);
     });
     var rb = el("button","tab","Обновить");
@@ -844,24 +846,110 @@
 
   /* ——— Ученики ——— */
 
+  var PUPIL_SUBJ = ["математика", "химия", "математика, химия"];
+  var PUPIL_FMT  = ["группа", "индивидуально"];
+  var PUPIL_ST   = ["учится", "пауза", "ушёл"];
+
   function paidBy(name){
     return DATA["Оплаты"].filter(function(o){ return o["ученик"] === name; })
       .reduce(function(a, o){ return a + (parseFloat(String(o["сумма"]).replace(",", ".")) || 0); }, 0);
   }
+  function pupilById(id){
+    var r = DATA["Ученики"].filter(function(p){ return String(p.id) === String(id); });
+    return r.length ? r[0] : null;
+  }
+  function groupOpts(cur){
+    var list = [""];
+    DATA["Группы"].forEach(function(g){
+      var n = String(g["название"] || "");
+      if(n && list.indexOf(n) < 0) list.push(n);
+    });
+    if(cur && list.indexOf(String(cur)) < 0) list.push(String(cur));
+    return list;
+  }
+  function mkInp(type, ph, val){
+    var i = document.createElement("input");
+    i.type = type;
+    if(ph) i.placeholder = ph;
+    if(val !== undefined && val !== null) i.value = val;
+    return i;
+  }
+  function mkSel(opts, val){
+    var s = document.createElement("select");
+    var list = opts.slice();
+    if(val && list.indexOf(String(val)) < 0) list.push(String(val));
+    list.forEach(function(o){
+      var e = document.createElement("option");
+      e.value = o; e.textContent = o || "—";
+      s.appendChild(e);
+    });
+    if(val !== undefined && val !== null) s.value = String(val);
+    return s;
+  }
+  function fld(name, node){
+    var l = el("label");
+    l.appendChild(el("span", null, name));
+    l.appendChild(node);
+    return l;
+  }
 
   function renderPupils(w){
+    if(pupilOpen){ renderPupilCard(w, pupilOpen); return; }
+
+    var p = el("div","panel");
+    p.appendChild(el("h3", null, "Новый ученик"));
+    var form = el("div","form");
+    var fName = mkInp("text", "имя как в журнале");
+    var fKl   = mkInp("text", "9");
+    var fSub  = mkSel(PUPIL_SUBJ, "математика");
+    var fFmt  = mkSel(PUPIL_FMT, "группа");
+    var fGrp  = mkSel(groupOpts(""), "");
+    var fAb   = mkInp("number", "260");
+    var fPar  = mkInp("text", "имя родителя");
+    var add   = el("button","btn","Добавить");
+    [["Ученик",fName],["Класс",fKl],["Предмет",fSub],["Формат",fFmt],
+     ["Группа",fGrp],["Абонемент",fAb],["Родитель",fPar]].forEach(function(pair){
+      form.appendChild(fld(pair[0], pair[1]));
+    });
+    form.appendChild(add);
+    add.addEventListener("click", function(){
+      var nm = fName.value.trim();
+      if(!nm){ toast("Без имени не запишу"); return; }
+      var dup = DATA["Ученики"].filter(function(r){
+        return String(r["ученик"]).toLowerCase() === nm.toLowerCase();
+      });
+      if(dup.length){ toast("Такой ученик уже есть"); return; }
+      send("add","Ученики",{row:{
+        "ученик":nm, "класс":fKl.value.trim(), "предмет":fSub.value, "формат":fFmt.value,
+        "группа":fGrp.value, "абонемент":fAb.value, "родитель":fPar.value.trim(),
+        "источник":"", "старт":today(), "discord":"нет", "holst":"нет",
+        "статус":"учится", "заметка":""
+      }}).then(function(){
+        fName.value = ""; fKl.value = ""; fAb.value = ""; fPar.value = "";
+        return afterWrite("Ученик добавлен");
+      }).catch(function(e){ toast("Ошибка: " + e.message); });
+    });
+    p.appendChild(form);
+    p.appendChild(el("p","col-hint",
+      "Старт поставлю сегодняшним числом, статус — «учится». Источник, заметку и остальное " +
+      "можно дописать в карточке."));
+    w.appendChild(p);
+
     var t = el("div","panel");
     t.appendChild(el("h3", null, "Ученики"));
     var rows = DATA["Ученики"].slice().sort(function(a,b){
       return Number(a["класс"]) - Number(b["класс"]) || String(a["ученик"]).localeCompare(String(b["ученик"]));
     });
     if(!rows.length){ t.appendChild(el("p","empty","Пока пусто.")); w.appendChild(t); return; }
+    t.appendChild(el("p","col-hint","Нажми на строку — откроется карточка ученика."));
     var tw = el("div","tbl-wrap");
     var tb = document.createElement("table");
-    tb.appendChild(head(["Ученик","Кл","Предмет","Формат","Группа","Абонемент","Оплачено","Родитель","Discord","Holst"]));
+    tb.appendChild(head(["Ученик","Кл","Предмет","Формат","Группа","Абонемент","Оплачено","Родитель","Discord"]));
     var body = document.createElement("tbody");
     rows.forEach(function(row){
       var tr = document.createElement("tr");
+      tr.className = "clickable";
+      tr.addEventListener("click", function(){ pupilOpen = row.id; render(); });
       var nm = el("td");
       nm.appendChild(el("strong", null, row["ученик"]));
       if(row["заметка"]){
@@ -882,12 +970,138 @@
       tr.appendChild(pd);
       tr.appendChild(el("td","muted", row["родитель"]));
       tr.appendChild(mark(row["discord"]));
-      tr.appendChild(mark(row["holst"]));
       body.appendChild(tr);
     });
     tb.appendChild(body); tw.appendChild(tb); t.appendChild(tw);
     w.appendChild(t);
   }
+
+  function renderPupilCard(w, id){
+    var r = pupilById(id);
+    if(!r){ pupilOpen = null; renderPupils(w); return; }
+
+    var bar = el("div","bar");
+    var back = el("button","btn btn-ghost btn-sm","← Все ученики");
+    back.addEventListener("click", function(){ pupilOpen = null; render(); });
+    bar.appendChild(back);
+    w.appendChild(bar);
+
+    var sum = paidBy(r["ученик"]);
+    var t = el("div","panel");
+    t.appendChild(el("h3", null, "Карточка ученика"));
+
+    var h = el("div", null, r["ученик"]);
+    h.style.font = "600 24px/1.2 var(--display)";
+    t.appendChild(h);
+    var meta = el("p","muted",
+      [r["класс"] ? r["класс"] + " класс" : "", r["предмет"], r["формат"], r["группа"]]
+        .filter(Boolean).join(" · "));
+    meta.style.margin = "4px 0 12px";
+    t.appendChild(meta);
+
+    var tags = el("div","card-tags");
+    tags.style.margin = "0 0 16px";
+    var unit = r["формат"] === "группа" ? " в месяц" : " за занятие";
+    tags.appendChild(el("span","pill", "абонемент " + r["абонемент"] + unit));
+    tags.appendChild(el("span", sum ? "pill" : "pill pill-warn",
+      sum ? "оплачено " + sum : "нет оплат"));
+    if(r["старт"]) tags.appendChild(el("span","pill", "с " + r["старт"]));
+    if(String(r["статус"]) && String(r["статус"]) !== "учится")
+      tags.appendChild(el("span","pill pill-warn", r["статус"]));
+    t.appendChild(tags);
+
+    var f = {};
+    f["ученик"]    = mkInp("text", "", r["ученик"]);
+    f["класс"]     = mkInp("text", "", r["класс"]);
+    f["предмет"]   = mkSel(PUPIL_SUBJ, r["предмет"]);
+    f["формат"]    = mkSel(PUPIL_FMT, r["формат"]);
+    f["группа"]    = mkSel(groupOpts(r["группа"]), r["группа"]);
+    f["абонемент"] = mkInp("number", "", r["абонемент"]);
+    f["родитель"]  = mkInp("text", "", r["родитель"]);
+    f["источник"]  = mkInp("text", "реклама, сарафан…", r["источник"]);
+    f["старт"]     = mkInp("text", "2025-09-01", r["старт"]);
+    f["discord"]   = mkSel(["нет","да"], r["discord"] || "нет");
+    f["статус"]    = mkSel(PUPIL_ST, r["статус"] || "учится");
+    var form = el("div","form");
+    [["Ученик","ученик"],["Класс","класс"],["Предмет","предмет"],["Формат","формат"],
+     ["Группа","группа"],["Абонемент","абонемент"],["Родитель","родитель"],
+     ["Источник","источник"],["Старт","старт"],["Discord","discord"],["Статус","статус"]]
+      .forEach(function(pair){ form.appendChild(fld(pair[0], f[pair[1]])); });
+    t.appendChild(form);
+
+    var note = document.createElement("textarea");
+    note.rows = 2;
+    note.placeholder = "чем занимаемся, о чём помнить";
+    note.value = r["заметка"] || "";
+    var nl = el("label");
+    nl.style.display = "grid"; nl.style.gap = "4px";
+    nl.style.fontSize = "12.5px"; nl.style.color = "var(--muted)";
+    nl.style.marginTop = "10px";
+    nl.appendChild(el("span", null, "Заметка"));
+    nl.appendChild(note);
+    t.appendChild(nl);
+
+    var save = el("button","btn","Сохранить");
+    save.style.marginTop = "14px";
+    save.addEventListener("click", function(){
+      if(!f["ученик"].value.trim()){ toast("Имя не может быть пустым"); return; }
+      var patch = {};
+      Object.keys(f).forEach(function(k){ patch[k] = f[k].value; });
+      patch["ученик"] = patch["ученик"].trim();
+      patch["заметка"] = note.value;
+      send("update","Ученики",{id:r.id, row:patch})
+        .then(function(){ return afterWrite("Сохранено"); })
+        .catch(function(e){ toast("Ошибка: " + e.message); });
+    });
+    t.appendChild(save);
+    t.appendChild(el("p","col-hint",
+      "Оплаты привязаны к имени. Если переименовать ученика, старые оплаты останутся " +
+      "на прежнем имени — их придётся поправить в таблице."));
+    w.appendChild(t);
+
+    var pp = el("div","panel");
+    pp.appendChild(el("h3", null, "Оплаты ученика"));
+    var mine = DATA["Оплаты"].filter(function(o){ return o["ученик"] === r["ученик"]; }).reverse();
+    if(!mine.length){
+      pp.appendChild(el("p","empty","Оплат пока нет."));
+    } else {
+      var tw2 = el("div","tbl-wrap");
+      var tb2 = document.createElement("table");
+      tb2.appendChild(head(["Дата","Месяц","Сумма","Чек"]));
+      var b2 = document.createElement("tbody");
+      mine.forEach(function(o){
+        var tr = document.createElement("tr");
+        tr.appendChild(el("td","muted", o["дата"]));
+        tr.appendChild(el("td", null, o["месяц"]));
+        tr.appendChild(el("td", null, o["сумма"]));
+        tr.appendChild(el("td","muted", o["чек"]));
+        b2.appendChild(tr);
+      });
+      tb2.appendChild(b2); tw2.appendChild(tb2); pp.appendChild(tw2);
+      pp.appendChild(el("p","col-hint", "Всего оплачено: " + sum));
+    }
+    var pf = el("div","form");
+    pf.style.marginTop = "12px";
+    var mon  = mkInp("text", "сентябрь");
+    var amt  = mkInp("number", String(r["абонемент"] || ""));
+    var chek = mkSel(["нет","да"], "нет");
+    var padd = el("button","btn","Записать оплату");
+    [["Месяц",mon],["Сумма",amt],["Чек",chek]].forEach(function(pair){
+      pf.appendChild(fld(pair[0], pair[1]));
+    });
+    pf.appendChild(padd);
+    padd.addEventListener("click", function(){
+      if(!amt.value){ toast("Сумма пустая"); return; }
+      send("add","Оплаты",{row:{
+        "дата":today(), "ученик":r["ученик"], "месяц":mon.value.trim(),
+        "сумма":amt.value, "чек":chek.value, "заметка":""
+      }}).then(function(){ return afterWrite("Оплата записана"); })
+        .catch(function(e){ toast("Ошибка: " + e.message); });
+    });
+    pp.appendChild(pf);
+    w.appendChild(pp);
+  }
+
   function mark(v){
     var td = el("td");
     var ok = String(v).toLowerCase() === "да";
