@@ -363,7 +363,7 @@
     if(id === "funnel") return DATA["Лиды"].filter(function(l){ return colOf(l) !== ARCH.k; }).length || null;
     if(id === "leads")  return DATA["Лиды"].length || null;
     if(id === "groups") return DATA["Группы"].length || null;
-    if(id === "pupils") return DATA["Ученики"].filter(function(p){ return p["статус"] !== "ушёл"; }).length || null;
+    if(id === "pupils") return DATA["Ученики"].filter(function(p){ return pupilState(p).k !== "ушёл"; }).length || null;
     if(id === "pay")    return null;
     if(id === "cal")    return CAL.filter(function(c){ return !c.free; }).length || null;
     return null;
@@ -875,12 +875,36 @@
 
   var PUPIL_SUBJ = ["математика", "химия", "математика, химия"];
   var PUPIL_FMT  = ["группа", "индивидуально"];
-  var PUPIL_ST   = ["учится", "пауза", "ушёл"];
 
   function paidBy(name){
     return DATA["Оплаты"].filter(function(o){ return o["ученик"] === name; })
       .reduce(function(a, o){ return a + (parseFloat(String(o["сумма"]).replace(",", ".")) || 0); }, 0);
   }
+  /* Статус считается по датам: старт, перерыв, окончание. */
+  function pupilState(r){
+    var t = today();
+    var st = String(r["старт"] || "").trim();
+    var e  = String(r["окончание"] || "").trim();
+    var p1 = String(r["перерыв_с"] || "").trim();
+    var p2 = String(r["перерыв_по"] || "").trim();
+    if(e && e <= t)   return {k:"ушёл",   text:"ушёл " + e};
+    if(String(r["статус"] || "").trim() === "ушёл" && !e)
+                      return {k:"ушёл",   text:"ушёл"};
+    if(p1 && p1 <= t && (!p2 || p2 >= t))
+                      return {k:"пауза",  text:"перерыв" + (p2 ? " до " + p2 : "")};
+    if(e)             return {k:"учится", text:"до " + e};
+    if(st && st > t)  return {k:"ждём",   text:"начнёт " + st};
+    if(st)            return {k:"учится", text:"с " + st};
+    return {k:"учится", text:"учится"};
+  }
+  function stateClass(k){
+    return k === "учится" ? "pill" : (k === "ждём" ? "pill pill-grape" : "pill pill-warn");
+  }
+  function discordText(v){
+    v = String(v === undefined || v === null ? "" : v).trim();
+    return v.toLowerCase() === "нет" ? "" : v;
+  }
+
   function pupilById(id){
     var r = DATA["Ученики"].filter(function(p){ return String(p.id) === String(id); });
     return r.length ? r[0] : null;
@@ -931,9 +955,10 @@
     var fGrp  = mkSel(groupOpts(""), "");
     var fAb   = mkInp("number", "260");
     var fPar  = mkInp("text", "имя родителя");
+    var fSt   = mkInp("date", "", today());
     var add   = el("button","btn","Добавить");
     [["Ученик",fName],["Класс",fKl],["Предмет",fSub],["Формат",fFmt],
-     ["Группа",fGrp],["Абонемент",fAb],["Родитель",fPar]].forEach(function(pair){
+     ["Группа",fGrp],["Абонемент",fAb],["Родитель",fPar],["Старт",fSt]].forEach(function(pair){
       form.appendChild(fld(pair[0], pair[1]));
     });
     form.appendChild(add);
@@ -947,17 +972,18 @@
       send("add","Ученики",{row:{
         "ученик":nm, "класс":fKl.value.trim(), "предмет":fSub.value, "формат":fFmt.value,
         "группа":fGrp.value, "абонемент":fAb.value, "родитель":fPar.value.trim(),
-        "источник":"", "старт":today(), "discord":"нет", "holst":"нет",
-        "статус":"учится", "заметка":""
+        "источник":"", "старт":fSt.value || today(), "discord":"", "holst":"",
+        "статус":"учится", "заметка":"", "перерыв_с":"", "перерыв_по":"", "окончание":""
       }}).then(function(){
         fName.value = ""; fKl.value = ""; fAb.value = ""; fPar.value = "";
+        fSt.value = today();
         return afterWrite("Ученик добавлен");
       }).catch(function(e){ toast("Ошибка: " + e.message); });
     });
     p.appendChild(form);
     p.appendChild(el("p","col-hint",
-      "Старт поставлю сегодняшним числом, статус — «учится». Источник, заметку и остальное " +
-      "можно дописать в карточке."));
+      "С даты старта ученик автоматически считается учащимся. Перерыв, окончание, " +
+      "дискорд, источник и заметку можно дописать в карточке."));
     w.appendChild(p);
 
     var t = el("div","panel");
@@ -977,6 +1003,12 @@
       tr.addEventListener("click", function(){ pupilOpen = row.id; pupilEdit = false; render(); });
       var nm = el("td");
       nm.appendChild(el("strong", null, row["ученик"]));
+      var stt = pupilState(row);
+      if(stt.k !== "учится"){
+        var sp = el("span", stateClass(stt.k), stt.text);
+        sp.style.marginLeft = "8px"; sp.style.fontSize = "11.5px";
+        nm.appendChild(sp);
+      }
       if(row["заметка"]){
         var z = el("div","muted", row["заметка"]); z.style.fontSize = "12px"; nm.appendChild(z);
       }
@@ -994,7 +1026,8 @@
       pd.appendChild(el("span", sum ? "pill" : "pill pill-warn", sum ? String(sum) : "нет оплат"));
       tr.appendChild(pd);
       tr.appendChild(el("td","muted", row["родитель"]));
-      tr.appendChild(mark(row["discord"]));
+      var dc = discordText(row["discord"]);
+      tr.appendChild(el("td", dc ? null : "muted", dc || "—"));
       body.appendChild(tr);
     });
     tb.appendChild(body); tw.appendChild(tb); t.appendChild(tw);
@@ -1042,16 +1075,17 @@
     tags.appendChild(el("span","pill", "абонемент " + r["абонемент"] + unit));
     tags.appendChild(el("span", sum ? "pill" : "pill pill-warn",
       sum ? "оплачено " + sum : "нет оплат"));
-    if(String(r["статус"]) && String(r["статус"]) !== "учится")
-      tags.appendChild(el("span","pill pill-warn", r["статус"]));
+    var stt = pupilState(r);
+    tags.appendChild(el("span", stateClass(stt.k), stt.text));
     b.appendChild(tags);
 
     if(!pupilEdit){
       var view = el("div","kv");
       [["Класс", r["класс"]], ["Предмет", r["предмет"]], ["Формат", r["формат"]],
        ["Группа", r["группа"]], ["Абонемент", r["абонемент"]], ["Родитель", r["родитель"]],
-       ["Источник", r["источник"]], ["Старт", r["старт"]],
-       ["Discord", r["discord"] || "нет"], ["Статус", r["статус"] || "учится"]]
+       ["Источник", r["источник"]], ["Discord", discordText(r["discord"])],
+       ["Старт", r["старт"]], ["Перерыв с", r["перерыв_с"]],
+       ["Перерыв по", r["перерыв_по"]], ["Окончание", r["окончание"]]]
         .forEach(function(pair){
           var cell = el("div");
           cell.appendChild(el("div","k", pair[0]));
@@ -1083,15 +1117,21 @@
       f["абонемент"] = mkInp("number", "", r["абонемент"]);
       f["родитель"]  = mkInp("text", "", r["родитель"]);
       f["источник"]  = mkInp("text", "реклама, сарафан…", r["источник"]);
-      f["старт"]     = mkInp("text", "2025-09-01", r["старт"]);
-      f["discord"]   = mkSel(["нет","да"], r["discord"] || "нет");
-      f["статус"]    = mkSel(PUPIL_ST, r["статус"] || "учится");
+      f["discord"]   = mkInp("text", "ник в дискорде", discordText(r["discord"]));
+      f["старт"]     = mkInp("date", "", r["старт"]);
+      f["перерыв_с"] = mkInp("date", "", r["перерыв_с"]);
+      f["перерыв_по"]= mkInp("date", "", r["перерыв_по"]);
+      f["окончание"] = mkInp("date", "", r["окончание"]);
       var form2 = el("div","form");
       [["Ученик","ученик"],["Класс","класс"],["Предмет","предмет"],["Формат","формат"],
        ["Группа","группа"],["Абонемент","абонемент"],["Родитель","родитель"],
-       ["Источник","источник"],["Старт","старт"],["Discord","discord"],["Статус","статус"]]
+       ["Источник","источник"],["Discord","discord"],["Старт","старт"],
+       ["Перерыв с","перерыв_с"],["Перерыв по","перерыв_по"],["Окончание","окончание"]]
         .forEach(function(pair){ form2.appendChild(fld(pair[0], f[pair[1]])); });
       b.appendChild(form2);
+      b.appendChild(el("p","col-hint",
+        "Статус считается сам: до старта — «начнёт», внутри перерыва — «перерыв», " +
+        "после даты окончания — «ушёл». Отдельно его выставлять не нужно."));
 
       var note = document.createElement("textarea");
       note.rows = 2;
@@ -1115,6 +1155,7 @@
         Object.keys(f).forEach(function(k){ patch[k] = f[k].value; });
         patch["ученик"] = patch["ученик"].trim();
         patch["заметка"] = note.value;
+        patch["статус"] = pupilState(patch).k;
         send("update","Ученики",{id:r.id, row:patch})
           .then(function(){ pupilEdit = false; return afterWrite("Сохранено"); })
           .catch(function(e){ toast("Ошибка: " + e.message); });
@@ -1150,18 +1191,19 @@
     }
     var pf = el("div","form");
     pf.style.marginTop = "12px";
+    var pday = mkInp("date", "", today());
     var mon  = mkInp("text", "сентябрь");
     var amt  = mkInp("number", String(r["абонемент"] || ""));
     var chek = mkSel(["нет","да"], "нет");
     var padd = el("button","btn","Записать оплату");
-    [["Месяц",mon],["Сумма",amt],["Чек",chek]].forEach(function(pair){
+    [["Дата",pday],["Месяц",mon],["Сумма",amt],["Чек",chek]].forEach(function(pair){
       pf.appendChild(fld(pair[0], pair[1]));
     });
     pf.appendChild(padd);
     padd.addEventListener("click", function(){
       if(!amt.value){ toast("Сумма пустая"); return; }
       send("add","Оплаты",{row:{
-        "дата":today(), "ученик":r["ученик"], "месяц":mon.value.trim(),
+        "дата":pday.value || today(), "ученик":r["ученик"], "месяц":mon.value.trim(),
         "сумма":amt.value, "чек":chek.value, "заметка":""
       }}).then(function(){ return afterWrite("Оплата записана"); })
         .catch(function(e){ toast("Ошибка: " + e.message); });
@@ -1186,19 +1228,20 @@
     var p = el("div","panel");
     p.appendChild(el("h3", null, "Новая оплата"));
     var form = el("div","form");
+    var day = document.createElement("input"); day.type="date"; day.value = today();
     var who = document.createElement("input"); who.type="text"; who.placeholder="ученик";
     var mon = document.createElement("input"); mon.type="text"; mon.placeholder="сентябрь";
     var sum = document.createElement("input"); sum.type="number"; sum.placeholder="260";
     var chek = document.createElement("select");
     ["да","нет"].forEach(function(s){ var o=document.createElement("option"); o.value=s; o.textContent=s; chek.appendChild(o); });
     var add = el("button","btn","Записать");
-    [["Ученик",who],["Месяц",mon],["Сумма",sum],["Чек",chek]].forEach(function(pair){
+    [["Дата",day],["Ученик",who],["Месяц",mon],["Сумма",sum],["Чек",chek]].forEach(function(pair){
       var l = el("label"); l.appendChild(el("span",null,pair[0])); l.appendChild(pair[1]); form.appendChild(l);
     });
     form.appendChild(add);
     add.addEventListener("click", function(){
       if(!who.value.trim()) return;
-      send("add","Оплаты",{row:{"дата":today(),"ученик":who.value.trim(),"месяц":mon.value.trim(),"сумма":sum.value,"чек":chek.value}})
+      send("add","Оплаты",{row:{"дата":day.value || today(),"ученик":who.value.trim(),"месяц":mon.value.trim(),"сумма":sum.value,"чек":chek.value}})
         .then(function(){ who.value=""; sum.value=""; return afterWrite("Оплата записана"); })
         .catch(function(e){ toast("Ошибка: " + e.message); });
     });
