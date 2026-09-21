@@ -161,6 +161,21 @@
 
   .form{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));align-items:end}
   .form label{display:grid;gap:4px;font-size:12.5px;color:var(--muted)}
+  .form .fldw{display:grid;gap:4px;font-size:12.5px;color:var(--muted);align-content:end}
+  .form .fldw.wide{grid-column:1 / -1}
+
+  /* расписание: чипсы дней и время у каждого выбранного дня */
+  .days{display:grid;gap:9px}
+  .day-chips{display:flex;gap:6px;flex-wrap:wrap}
+  .day-chip{font:600 13px/1 var(--sans);padding:9px 11px;border-radius:9px;cursor:pointer;
+            border:1px solid var(--line);background:var(--card);color:var(--ink)}
+  .day-chip[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);
+            color:var(--accent-ink)}
+  .day-times{display:grid;gap:6px}
+  .day-time{display:flex;gap:10px;align-items:center;justify-content:space-between;
+            font-size:14px;color:var(--ink)}
+  .day-time input{width:128px;min-width:0}
+  .day-times .col-hint{margin:0}
 
   /* панель фильтров над таблицей */
   .filters{display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin:12px 0 16px;
@@ -911,13 +926,20 @@
     var gFmt  = mkSel(usedVals(DATA["Группы"], "формат").concat(
                         usedVals(DATA["Группы"], "формат").indexOf("группа") > -1 ? [] : ["группа"]),
                       "группа");
-    var gDays = mkInp("text", "вт, чт 17:00");
+    var gSeats= mkSel(SEATS, String(SEATS_FMT["группа"]));
+    var gDays = mkDays("");
     var gTeach= mkInp("text", "кто ведёт");
     var gAdd  = el("button","btn","Добавить");
+    /* сменили формат — подставляем обычное число мест для него */
+    gFmt.addEventListener("change", function(){
+      var d = SEATS_FMT[gFmt.value];
+      gSeats.value = d ? String(d) : "";
+    });
     [["Название",gName],["Предмет",gSubj],["Класс",gKl],["Формат",gFmt],
-     ["Дни",gDays],["Преподаватель",gTeach]].forEach(function(pair){
+     ["Мест",gSeats],["Преподаватель",gTeach]].forEach(function(pair){
       gf.appendChild(fld(pair[0], pair[1]));
     });
+    gf.appendChild(fldBox("Расписание", gDays, true));
     gf.appendChild(gAdd);
     gAdd.addEventListener("click", function(){
       var nm = gName.value.trim();
@@ -927,10 +949,10 @@
         toast("Такая группа уже есть"); return;
       }
       var row = {"название":nm, "предмет":gSubj.value, "класс":gKl.value.trim(),
-                 "формат":gFmt.value, "дни":gDays.value.trim(),
+                 "формат":gFmt.value, "дни":gDays.value, "мест":gSeats.value,
                  "преподаватель":gTeach.value.trim(), "заметка":""};
       localAdd("Группы", copyOf(row));
-      gName.value = ""; gKl.value = ""; gDays.value = ""; gTeach.value = "";
+      gName.value = ""; gKl.value = ""; gTeach.value = "";
       render();
       bg(send("add","Группы",{row:row}).then(function(){
         return load().then(render);
@@ -960,8 +982,7 @@
           var cl = el("span","muted", g["класс"] + " класс");
           cl.style.fontSize = "13px";
           var pl = pupilsOf(g["название"]);
-          var cnt = el("span", pl.length ? "pill" : "pill pill-warn", pl.length + " из 7");
-          line.appendChild(nm); line.appendChild(cl); line.appendChild(cnt);
+          line.appendChild(nm); line.appendChild(cl); line.appendChild(seatsPill(g, pl.length));
           var ab = String(g["абонемент"] || "").trim();
           line.appendChild(el("span", ab ? "pill" : "pill pill-warn",
                               ab ? ab + " в месяц" : "цена не задана"));
@@ -974,7 +995,8 @@
             if(String(groupOpen) === String(g.id)) r.classList.add("sel");
           }
           r.appendChild(line);
-          var days = el("div","muted", [g["дни"], g["преподаватель"]].filter(Boolean).join(" · "));
+          var days = el("div","muted",
+                        [daysText(g["дни"]), g["преподаватель"]].filter(Boolean).join(" · "));
           days.style.fontSize = "13px"; days.style.fontFamily = "var(--mono)";
           r.appendChild(days);
           if(pl.length){
@@ -1051,7 +1073,7 @@
     b.appendChild(h);
     var pl = pupilsOf(g["название"]);
     var meta = el("p","muted",
-      [g["класс"] ? g["класс"] + " класс" : "", g["предмет"], g["формат"], g["дни"]]
+      [g["класс"] ? g["класс"] + " класс" : "", g["предмет"], g["формат"], daysText(g["дни"])]
         .filter(Boolean).join(" · "));
     meta.style.margin = "4px 0 12px";
     b.appendChild(meta);
@@ -1061,7 +1083,7 @@
     var abNow = String(g["абонемент"] || "").trim();
     tags.appendChild(el("span", abNow ? "pill" : "pill pill-warn",
                         abNow ? abNow + " в месяц" : "цена не задана"));
-    tags.appendChild(el("span", pl.length ? "pill" : "pill pill-warn", pl.length + " из 7"));
+    tags.appendChild(seatsPill(g, pl.length));
     b.appendChild(tags);
 
     var f = {};
@@ -1072,16 +1094,20 @@
                                  usedVals(DATA["Группы"], "формат").indexOf("группа") > -1
                                    ? [] : ["группа"]), g["формат"] || "группа");
     f["абонемент"]     = mkInp("number", "260", g["абонемент"]);
-    f["дни"]           = mkInp("text", "вт, чт 17:00", g["дни"]);
+    f["мест"]          = mkSel(SEATS, g["мест"]);
+    f["дни"]           = mkDays(g["дни"]);
     f["преподаватель"] = mkInp("text", "кто ведёт", g["преподаватель"]);
     var form = el("div","form");
     [["Название","название"],["Предмет","предмет"],["Класс","класс"],["Формат","формат"],
-     ["Абонемент","абонемент"],["Дни","дни"],["Преподаватель","преподаватель"]]
+     ["Абонемент","абонемент"],["Мест","мест"],["Преподаватель","преподаватель"]]
       .forEach(function(pair){ form.appendChild(fld(pair[0], f[pair[1]])); });
+    form.appendChild(fldBox("Расписание", f["дни"], true));
     b.appendChild(form);
     b.appendChild(el("p","col-hint",
       "Абонемент группы подставляется всем её ученикам. Если у кого-то цена своя — " +
-      "скидка или старый тариф — она ставится в его направлении и перебивает групповую."));
+      "скидка или старый тариф — она ставится в его направлении и перебивает групповую. " +
+      "Мест по умолчанию: группа 7, пара 2, индивидуально 1. В текстах клиентам обещано " +
+      "«до 7 человек» — если поставить больше, скрипт Директа придётся править."));
 
     var note = document.createElement("textarea");
     note.rows = 2;
@@ -1276,6 +1302,118 @@
   var PUPIL_ST  = ["учится", "ждём", "пауза", "ушёл"];
   var PUPIL_KL  = ["5", "6", "7", "8", "9", "10", "11"];
   var PUPIL_SRC = ["сарафан", "инста"];
+
+  var WDAYS = [["пн","понедельник"],["вт","вторник"],["ср","среда"],["чт","четверг"],
+               ["пт","пятница"],["сб","суббота"],["вс","воскресенье"]];
+  var WCODES = WDAYS.map(function(x){ return x[0]; });
+  var SEATS  = ["","1","2","3","4","5","6","7","8","9","10","11","12"];
+  /* Сколько человек помещается, если в группе не проставлено вручную.
+     Семь — из справочника фактов: «группа до 7 человек». */
+  var SEATS_FMT = {"группа":7, "пара":2, "индивидуально":1};
+
+  /* ——— расписание группы ———
+     Лежит в колонке «дни» строкой «вт 17:00, сб 17:45»: у каждого дня своё время,
+     потому что у половины групп два дня идут в разные часы.
+     Старый свободный текст не ломается — он просто показывается как есть. */
+  function parseDays(s){
+    var out = [];
+    String(s || "").split(/[,;]/).forEach(function(part){
+      var m = String(part).trim().match(/^(пн|вт|ср|чт|пт|сб|вс)(?:\s+(\d{1,2}[:.]\d{2}))?$/i);
+      if(!m) return;
+      var d = m[1].toLowerCase();
+      if(out.some(function(x){ return x.d === d; })) return;
+      out.push({d:d, t:(m[2] || "").replace(".", ":")});
+    });
+    out.sort(function(a,b){ return WCODES.indexOf(a.d) - WCODES.indexOf(b.d); });
+    return out;
+  }
+  function packDays(list){
+    return list.map(function(x){ return x.d + (x.t ? " " + x.t : ""); }).join(", ");
+  }
+  function dayFull(code){
+    var r = WDAYS.filter(function(x){ return x[0] === code; })[0];
+    return r ? r[1] : code;
+  }
+  function joinRu(arr){
+    if(arr.length < 2) return arr.join("");
+    return arr.slice(0, -1).join(", ") + " и " + arr[arr.length - 1];
+  }
+  function daysText(s){
+    var l = parseDays(s);
+    if(!l.length) return String(s || "").trim();
+    var t0 = l[0].t;
+    var same = l.every(function(x){ return x.t === t0; });
+    if(same) return joinRu(l.map(function(x){ return dayFull(x.d); })) + (t0 ? " в " + t0 : "");
+    return joinRu(l.map(function(x){ return dayFull(x.d) + (x.t ? " в " + x.t : ""); }));
+  }
+  function seatsOf(g){
+    var n = parseInt(String(g["мест"] || "").trim(), 10);
+    if(n > 0) return n;
+    return SEATS_FMT[String(g["формат"] || "").trim()] || 0;
+  }
+  function seatsPill(g, taken){
+    var n = seatsOf(g);
+    var txt = n ? taken + " из " + n : taken + (taken === 1 ? " ученик" : " учеников");
+    return el("span", (!taken || (n && taken > n)) ? "pill pill-warn" : "pill", txt);
+  }
+
+  /* Чипсы дней: отмеченный день получает своё поле времени.
+     Узел отдаёт .value строкой, как обычное поле формы. */
+  function mkDays(val){
+    var box   = el("div","days");
+    var chips = el("div","day-chips");
+    var times = el("div","day-times");
+    var picked = {};
+    parseDays(val).forEach(function(x){ picked[x.d] = x.t; });
+    var raw  = String(val || "").trim();
+    var lost = raw && !parseDays(raw).length ? raw : "";
+
+    function list(){
+      return Object.keys(picked).sort(function(a,b){
+        return WCODES.indexOf(a) - WCODES.indexOf(b);
+      }).map(function(d){ return {d:d, t:picked[d]}; });
+    }
+    function lastTime(){
+      var l = list();
+      for(var i = l.length - 1; i >= 0; i--){ if(l[i].t) return l[i].t; }
+      return "";
+    }
+    function draw(){
+      chips.innerHTML = ""; times.innerHTML = "";
+      WDAYS.forEach(function(pair){
+        var code = pair[0];
+        var b = el("button","day-chip", code);
+        b.type = "button";
+        b.title = dayFull(code);
+        b.setAttribute("aria-pressed", picked[code] !== undefined ? "true" : "false");
+        b.addEventListener("click", function(){
+          if(picked[code] !== undefined) delete picked[code];
+          else picked[code] = lastTime();
+          draw();
+        });
+        chips.appendChild(b);
+      });
+      list().forEach(function(x){
+        var row = el("div","day-time");
+        row.appendChild(el("span", null, dayFull(x.d)));
+        var t = mkInp("time", "", x.t);
+        t.addEventListener("input",  function(){ picked[x.d] = t.value; });
+        t.addEventListener("change", function(){ picked[x.d] = t.value; });
+        row.appendChild(t);
+        times.appendChild(row);
+      });
+      if(!list().length){
+        times.appendChild(el("p","col-hint", lost ? "Сейчас записано: " + lost
+                                                  : "Дни не выбраны."));
+      }
+    }
+    draw();
+    box.appendChild(chips); box.appendChild(times);
+    Object.defineProperty(box, "value", {
+      get: function(){ return list().length ? packDays(list()) : (lost || ""); }
+    });
+    return box;
+  }
   /* Скидки берутся из справочника фактов и нигде больше не задаются.
      50% — только новым и только на первый абонемент, на группу.
      30% — при оплате трёх и более абонементов, на любой формат. */
@@ -1365,6 +1503,14 @@
   }
   function fld(name, node){
     var l = el("label");
+    l.appendChild(el("span", null, name));
+    l.appendChild(node);
+    return l;
+  }
+  /* То же, но на div: внутри label клик по любой кнопке браузер переносит
+     на первую кнопку в нём, и чипсы дней переключались парами. */
+  function fldBox(name, node, wide){
+    var l = el("div", wide ? "fldw wide" : "fldw");
     l.appendChild(el("span", null, name));
     l.appendChild(node);
     return l;
