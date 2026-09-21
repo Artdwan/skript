@@ -82,6 +82,9 @@
          padding:16px 18px;border-bottom:1px solid var(--line)}
   .dhead .t{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;
             color:var(--muted)}
+  .dstat{font:500 12.5px/1 var(--mono);color:var(--muted);margin-right:auto}
+  .dstat.ok{color:var(--accent)}
+  .dstat.bad{color:var(--warn)}
   .dx{background:none;border:1px solid var(--line);border-radius:9px;color:var(--ink);
       font:500 15px/1 var(--sans);padding:8px 11px;cursor:pointer}
   .dx:hover{background:var(--accent-soft)}
@@ -239,6 +242,8 @@
   var dirEdit = null;
   var dirAdd = false;
   var pupilF = {q:"", subj:"", klass:"", fmt:"", group:"", st:""};
+  /* открытая карточка кладёт сюда своё сохранение, чтобы закрытие не потеряло правку */
+  var flushSave = null;
 
   var app = document.getElementById("app");
 
@@ -1070,6 +1075,8 @@
     var d = el("aside","drawer");
     var hd = el("div","dhead");
     hd.appendChild(el("div","t","Карточка группы"));
+    var status = el("span","dstat","");
+    hd.appendChild(status);
     var x = el("button","dx","Закрыть ✕");
     x.addEventListener("click", closeDrawer);
     hd.appendChild(x);
@@ -1106,7 +1113,8 @@
     f["абонемент"]     = mkInp("number", "260", g["абонемент"]);
     f["мест"]          = mkSel(SEATS, g["мест"]);
     f["минуты"]        = mkSel(MINS, g["минуты"]);
-    f["дни"]           = mkDays(g["дни"], function(){ return f["минуты"].value; });
+    f["дни"]           = mkDays(g["дни"], function(){ return f["минуты"].value; },
+                                function(){ saveSoon(); });
     f["минуты"].addEventListener("change", function(){ f["дни"].redraw(); });
     f["преподаватель"] = mkInp("text", "кто ведёт", g["преподаватель"]);
     var form = el("div","form");
@@ -1134,36 +1142,89 @@
     nl.appendChild(note);
     b.appendChild(nl);
 
-    var acts = el("div","row-actions");
-    acts.style.marginTop = "14px";
-    var save = el("button","btn","Сохранить");
-    save.addEventListener("click", function(){
+    /* ——— карточка сохраняется сама ———
+       Кнопки «Сохранить» нет: её легко забыть, а правка одного поля — дешёвая.
+       Списки и выбор дней уходят сразу, текстовые поля — когда их отпустили,
+       иначе переименование срабатывало бы на каждой букве и тащило направления.
+       Перерисовку списка слева откладываем до закрытия: иначе карточка
+       пересоберётся под руками и поле потеряет фокус. */
+    var okTimer = null, sendTimer = null, seq = 0;
+    function setStat(t, cls){
+      status.textContent = t || "";
+      status.className = "dstat" + (cls ? " " + cls : "");
+    }
+    function repaintHead(){
+      h.textContent = g["название"];
+      meta.textContent = [g["класс"] ? g["класс"] + " класс" : "", g["предмет"], g["формат"],
+                          daysText(g["дни"], g["минуты"])].filter(Boolean).join(" · ");
+      tags.innerHTML = "";
+      var ab = String(g["абонемент"] || "").trim();
+      tags.appendChild(el("span", ab ? "pill" : "pill pill-warn",
+                          ab ? ab + " в месяц" : "цена не задана"));
+      tags.appendChild(seatsPill(g, pl.length));
+      var mn = String(g["минуты"] || "").trim();
+      if(mn) tags.appendChild(el("span","pill", mn + " минут"));
+    }
+    function saveNow(){
+      clearTimeout(sendTimer);
       var nm = f["название"].value.trim();
-      if(!nm){ toast("Название не может быть пустым"); return; }
-      var dup = DATA["Группы"].some(function(x){
-        return String(x.id) !== String(g.id) &&
-               String(x["название"] || "").trim().toLowerCase() === nm.toLowerCase();
-      });
-      if(dup){ toast("Группа с таким названием уже есть"); return; }
       var patch = {};
       Object.keys(f).forEach(function(k){ patch[k] = f[k].value; });
       patch["название"] = nm;
       patch["заметка"] = note.value;
+      var same = Object.keys(patch).every(function(k){
+        return String(g[k] === undefined ? "" : g[k]) === String(patch[k]);
+      });
+      if(same) return;          /* ничего не менялось — и сообщать не о чем */
+      /* каждая правка получает свой номер: ответ на старую больше не перебьёт
+         то, что написано сейчас — иначе «сохранено» затирало бы жалобу на ошибку */
+      var my = ++seq;
+      if(!nm){ setStat("без названия не сохраню", "bad"); return; }
+      var dup = DATA["Группы"].some(function(x){
+        return String(x.id) !== String(g.id) &&
+               String(x["название"] || "").trim().toLowerCase() === nm.toLowerCase();
+      });
+      if(dup){ setStat("такое название уже занято", "bad"); return; }
       var was = String(g["название"] || "").trim();
       /* переименование тянет за собой направления — они ссылаются по названию */
       var moves = was !== nm ? DATA["Направления"].filter(function(x){
         return String(x["группа"] || "").trim() === was; }) : [];
       localPatch("Группы", g.id, patch);
       moves.forEach(function(x){ localPatch("Направления", x.id, {"группа":nm}); });
-      render();
-      bg(send("update","Группы",{id:g.id, row:patch}).then(function(){
+      repaintHead();
+      setStat("сохраняю…");
+      send("update","Группы",{id:g.id, row:patch}).then(function(){
         return moves.reduce(function(chain, x){
           return chain.then(function(){
             return send("update","Направления",{id:x.id, row:{"группа":nm}});
           });
         }, Promise.resolve());
-      }), "Сохранено");
+      }).then(function(){
+        if(my !== seq) return;
+        setStat("сохранено", "ok");
+        clearTimeout(okTimer);
+        okTimer = setTimeout(function(){ if(my === seq) setStat(""); }, 2500);
+      }).catch(function(e){
+        if(keyDied(e)) return;
+        if(my !== seq) return;
+        setStat("не сохранилось: " + e.message, "bad");
+      });
+    }
+    function saveSoon(){ clearTimeout(sendTimer); sendTimer = setTimeout(saveNow, 600); }
+    flushSave = saveNow;
+    Object.keys(f).forEach(function(k){
+      if(k === "дни") return;
+      f[k].addEventListener("change", saveNow);
+      /* переименование тянет направления, поэтому его ждём до конца ввода;
+         остальные поля уходят сами через полсекунды после последней буквы */
+      if(k === "название") f[k].addEventListener("blur", saveNow);
+      else if(f[k].tagName === "INPUT") f[k].addEventListener("input", saveSoon);
     });
+    note.addEventListener("change", saveNow);
+    note.addEventListener("input", saveSoon);
+
+    var acts = el("div","row-actions");
+    acts.style.marginTop = "14px";
     var cancel = el("button","btn btn-ghost","Закрыть");
     cancel.addEventListener("click", closeDrawer);
     /* Удаление: два нажатия, и только пока в группе нет учащихся. */
@@ -1185,7 +1246,7 @@
       render();
       bg(send("delete","Группы",{id:g.id}), "Группа удалена");
     });
-    acts.appendChild(save); acts.appendChild(cancel); acts.appendChild(del);
+    acts.appendChild(cancel); acts.appendChild(del);
     b.appendChild(acts);
 
     var ps = el("div","dsec");
@@ -1395,7 +1456,7 @@
 
   /* Чипсы дней: отмеченный день получает своё поле времени.
      Узел отдаёт .value строкой, как обычное поле формы. */
-  function mkDays(val, getMins){
+  function mkDays(val, getMins, onChange){
     var box   = el("div","days");
     var chips = el("div","day-chips");
     var times = el("div","day-times");
@@ -1426,6 +1487,7 @@
           if(picked[code] !== undefined) delete picked[code];
           else picked[code] = lastTime();
           draw();
+          if(onChange) onChange();
         });
         chips.appendChild(b);
       });
@@ -1442,6 +1504,7 @@
           picked[x.d] = t.value;
           var e = timeEnd(t.value, getMins ? getMins() : "");
           end.textContent = e ? "до " + e : "";
+          if(onChange) onChange();
         }
         t.addEventListener("input",  tick);
         t.addEventListener("change", tick);
@@ -1744,6 +1807,8 @@
   }
 
   function closeDrawer(){
+    /* в карточке могла остаться правка, которая ждала своей секунды */
+    if(flushSave){ var fs = flushSave; flushSave = null; fs(); }
     if(!pupilOpen && !groupOpen) return;
     pupilOpen = null; pupilEdit = false; payEdit = null; dirEdit = null; dirAdd = false; groupOpen = null; render();
   }
