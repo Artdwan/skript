@@ -502,10 +502,15 @@
             <input type="text" class="book-input" id="taskWhat" placeholder="что сделать" autocomplete="off">
             <input type="text" class="book-input" id="taskWho" placeholder="к кому относится" autocomplete="off">
             <input type="date" class="book-input" id="taskDue">
+            <select class="book-input" id="taskTo">
+              <option value="Артур">Артуру</option>
+              <option value="Настя">себе</option>
+            </select>
             <button type="button" class="book-send" id="taskAdd">Добавить</button>
           </div>
           <div class="task-list" id="taskRows"></div>
-          <p>Список общий с кабинетом Артура. Отметили «готово» - задача уходит и у него.</p>
+          <p>Здесь ваши задачи и общие - те, у кого исполнитель не проставлен. Список
+          общий с кабинетом Артура: отметили «готово» - задача уходит и у него.</p>
         </div>
       </section>
     </div>
@@ -970,6 +975,7 @@
   }
 
   /* ——— задачи: общий список с кабинетом ——— */
+  var ME = "Настя";          // чьи задачи показываем
   var TASKS = [];
   var tasksLoaded = false;
 
@@ -981,7 +987,7 @@
 
   function loadTasks(){
     if(!HOOK || typeof fetch !== "function") return;
-    fetch(HOOK + "?action=tasks", {cache:"no-store"})
+    fetch(HOOK + "?action=tasks&for=" + encodeURIComponent(ME), {cache:"no-store"})
       .then(function(r){ return r.json(); })
       .then(function(d){
         if(!d || !d.ok) throw new Error("не отдало задачи");
@@ -1028,6 +1034,7 @@
       var meta = [];
       if(t["кого"]) meta.push(t["кого"]);
       if(t["кто"]) meta.push("поставил: " + t["кто"]);
+      meta.push(String(t["исполнитель"] || "").trim() === ME ? "вам" : "общая");
       if(meta.length){
         var m = document.createElement("div");
         m.className = "task-meta";
@@ -1098,12 +1105,14 @@
     if(!what || !what.value.trim()) return;
     if(!HOOK){ toast("Нет адреса шлюза"); return; }
     if(btn) btn.disabled = true;
+    var to = document.getElementById("taskTo");
     sendTask({
       action: "task", op: "add",
       what: what.value.trim(),
       who: who ? who.value.trim() : "",
       due: due ? due.value : "",
-      from: "Настя"
+      from: ME,
+      to: to ? to.value : "Артур"
     }).then(function(){
       what.value = "";
       if(who) who.value = "";
