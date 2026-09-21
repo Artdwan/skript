@@ -175,6 +175,8 @@
   .day-time{display:flex;gap:10px;align-items:center;justify-content:space-between;
             font-size:14px;color:var(--ink)}
   .day-time input{width:128px;min-width:0}
+  .day-right{display:flex;gap:9px;align-items:center}
+  .day-end{font:500 12.5px/1 var(--mono);color:var(--muted);white-space:nowrap}
   .day-times .col-hint{margin:0}
 
   /* панель фильтров над таблицей */
@@ -927,16 +929,21 @@
                         usedVals(DATA["Группы"], "формат").indexOf("группа") > -1 ? [] : ["группа"]),
                       "группа");
     var gSeats= mkSel(SEATS, String(SEATS_FMT["группа"]));
-    var gDays = mkDays("");
+    var gMins = mkSel(MINS, "");
+    var gDays = mkDays("", function(){ return gMins.value; });
     var gTeach= mkInp("text", "кто ведёт");
     var gAdd  = el("button","btn","Добавить");
-    /* сменили формат — подставляем обычное число мест для него */
+    /* сменили формат — подставляем обычные для него число мест и длительность */
     gFmt.addEventListener("change", function(){
       var d = SEATS_FMT[gFmt.value];
       gSeats.value = d ? String(d) : "";
+      var m = MINS_FMT[gFmt.value];
+      if(m) gMins.value = m;
+      gDays.redraw();
     });
+    gMins.addEventListener("change", function(){ gDays.redraw(); });
     [["Название",gName],["Предмет",gSubj],["Класс",gKl],["Формат",gFmt],
-     ["Мест",gSeats],["Преподаватель",gTeach]].forEach(function(pair){
+     ["Мест",gSeats],["Минут в занятии",gMins],["Преподаватель",gTeach]].forEach(function(pair){
       gf.appendChild(fld(pair[0], pair[1]));
     });
     gf.appendChild(fldBox("Расписание", gDays, true));
@@ -950,7 +957,7 @@
       }
       var row = {"название":nm, "предмет":gSubj.value, "класс":gKl.value.trim(),
                  "формат":gFmt.value, "дни":gDays.value, "мест":gSeats.value,
-                 "преподаватель":gTeach.value.trim(), "заметка":""};
+                 "минуты":gMins.value, "преподаватель":gTeach.value.trim(), "заметка":""};
       localAdd("Группы", copyOf(row));
       gName.value = ""; gKl.value = ""; gTeach.value = "";
       render();
@@ -996,7 +1003,8 @@
           }
           r.appendChild(line);
           var days = el("div","muted",
-                        [daysText(g["дни"]), g["преподаватель"]].filter(Boolean).join(" · "));
+                        [daysText(g["дни"], g["минуты"]), g["преподаватель"]]
+                          .filter(Boolean).join(" · "));
           days.style.fontSize = "13px"; days.style.fontFamily = "var(--mono)";
           r.appendChild(days);
           if(pl.length){
@@ -1073,8 +1081,8 @@
     b.appendChild(h);
     var pl = pupilsOf(g["название"]);
     var meta = el("p","muted",
-      [g["класс"] ? g["класс"] + " класс" : "", g["предмет"], g["формат"], daysText(g["дни"])]
-        .filter(Boolean).join(" · "));
+      [g["класс"] ? g["класс"] + " класс" : "", g["предмет"], g["формат"],
+       daysText(g["дни"], g["минуты"])].filter(Boolean).join(" · "));
     meta.style.margin = "4px 0 12px";
     b.appendChild(meta);
 
@@ -1084,6 +1092,8 @@
     tags.appendChild(el("span", abNow ? "pill" : "pill pill-warn",
                         abNow ? abNow + " в месяц" : "цена не задана"));
     tags.appendChild(seatsPill(g, pl.length));
+    var minNow = String(g["минуты"] || "").trim();
+    if(minNow) tags.appendChild(el("span","pill", minNow + " минут"));
     b.appendChild(tags);
 
     var f = {};
@@ -1095,11 +1105,14 @@
                                    ? [] : ["группа"]), g["формат"] || "группа");
     f["абонемент"]     = mkInp("number", "260", g["абонемент"]);
     f["мест"]          = mkSel(SEATS, g["мест"]);
-    f["дни"]           = mkDays(g["дни"]);
+    f["минуты"]        = mkSel(MINS, g["минуты"]);
+    f["дни"]           = mkDays(g["дни"], function(){ return f["минуты"].value; });
+    f["минуты"].addEventListener("change", function(){ f["дни"].redraw(); });
     f["преподаватель"] = mkInp("text", "кто ведёт", g["преподаватель"]);
     var form = el("div","form");
     [["Название","название"],["Предмет","предмет"],["Класс","класс"],["Формат","формат"],
-     ["Абонемент","абонемент"],["Мест","мест"],["Преподаватель","преподаватель"]]
+     ["Абонемент","абонемент"],["Мест","мест"],["Минут в занятии","минуты"],
+     ["Преподаватель","преподаватель"]]
       .forEach(function(pair){ form.appendChild(fld(pair[0], f[pair[1]])); });
     form.appendChild(fldBox("Расписание", f["дни"], true));
     b.appendChild(form);
@@ -1310,6 +1323,10 @@
   /* Сколько человек помещается, если в группе не проставлено вручную.
      Семь — из справочника фактов: «группа до 7 человек». */
   var SEATS_FMT = {"группа":7, "пара":2, "индивидуально":1};
+  /* Длительность занятия. Из справочника: у групп бывает 45 и 60,
+     индивидуальное — 45, пара — 60. Остальные значения на всякий случай. */
+  var MINS = ["","30","40","45","60","75","90","120"];
+  var MINS_FMT = {"пара":"60", "индивидуально":"45"};
 
   /* ——— расписание группы ———
      Лежит в колонке «дни» строкой «вт 17:00, сб 17:45»: у каждого дня своё время,
@@ -1338,13 +1355,32 @@
     if(arr.length < 2) return arr.join("");
     return arr.slice(0, -1).join(", ") + " и " + arr[arr.length - 1];
   }
-  function daysText(s){
+  /* Конец занятия: начало плюс длительность. Нужен только для показа. */
+  function timeEnd(t, mins){
+    var m = String(t || "").match(/^(\d{1,2}):(\d{2})$/);
+    var n = parseInt(String(mins || "").trim(), 10);
+    if(!m || !(n > 0)) return "";
+    var all = (Number(m[1]) * 60 + Number(m[2]) + n) % 1440;
+    var hh = Math.floor(all / 60), mm = all % 60;
+    return (hh < 10 ? "0" : "") + hh + ":" + (mm < 10 ? "0" : "") + mm;
+  }
+  function spanText(t, mins){
+    if(!t) return "";
+    var e = timeEnd(t, mins);
+    return e ? t + "-" + e : t;
+  }
+  function daysText(s, mins){
     var l = parseDays(s);
     if(!l.length) return String(s || "").trim();
     var t0 = l[0].t;
     var same = l.every(function(x){ return x.t === t0; });
-    if(same) return joinRu(l.map(function(x){ return dayFull(x.d); })) + (t0 ? " в " + t0 : "");
-    return joinRu(l.map(function(x){ return dayFull(x.d) + (x.t ? " в " + x.t : ""); }));
+    if(same){
+      return joinRu(l.map(function(x){ return dayFull(x.d); })) +
+             (t0 ? " в " + spanText(t0, mins) : "");
+    }
+    return joinRu(l.map(function(x){
+      return dayFull(x.d) + (x.t ? " в " + spanText(x.t, mins) : "");
+    }));
   }
   function seatsOf(g){
     var n = parseInt(String(g["мест"] || "").trim(), 10);
@@ -1359,7 +1395,7 @@
 
   /* Чипсы дней: отмеченный день получает своё поле времени.
      Узел отдаёт .value строкой, как обычное поле формы. */
-  function mkDays(val){
+  function mkDays(val, getMins){
     var box   = el("div","days");
     var chips = el("div","day-chips");
     var times = el("div","day-times");
@@ -1393,13 +1429,24 @@
         });
         chips.appendChild(b);
       });
+      var mins = getMins ? getMins() : "";
       list().forEach(function(x){
         var row = el("div","day-time");
         row.appendChild(el("span", null, dayFull(x.d)));
+        var right = el("div","day-right");
+        var end = el("span","day-end", timeEnd(x.t, mins) ? "до " + timeEnd(x.t, mins) : "");
+        right.appendChild(end);
         var t = mkInp("time", "", x.t);
-        t.addEventListener("input",  function(){ picked[x.d] = t.value; });
-        t.addEventListener("change", function(){ picked[x.d] = t.value; });
-        row.appendChild(t);
+        /* перерисовывать нельзя — поле потеряет фокус, поэтому правим только подпись */
+        function tick(){
+          picked[x.d] = t.value;
+          var e = timeEnd(t.value, getMins ? getMins() : "");
+          end.textContent = e ? "до " + e : "";
+        }
+        t.addEventListener("input",  tick);
+        t.addEventListener("change", tick);
+        right.appendChild(t);
+        row.appendChild(right);
         times.appendChild(row);
       });
       if(!list().length){
@@ -1409,6 +1456,7 @@
     }
     draw();
     box.appendChild(chips); box.appendChild(times);
+    box.redraw = draw;
     Object.defineProperty(box, "value", {
       get: function(){ return list().length ? packDays(list()) : (lost || ""); }
     });
