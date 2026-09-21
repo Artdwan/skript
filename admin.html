@@ -725,17 +725,25 @@
     var what = document.createElement("input"); what.type="text"; what.placeholder="что сделать";
     var who  = document.createElement("input"); who.type="text";  who.placeholder="к кому относится";
     var due  = document.createElement("input"); due.type="date";  due.value = today();
+    var exec = mkSel(TASK_WHO, "Артур");
     var l1 = el("label"); l1.appendChild(el("span",null,"Задача")); l1.appendChild(what);
     var l2 = el("label"); l2.appendChild(el("span",null,"Кого касается")); l2.appendChild(who);
     var l3 = el("label"); l3.appendChild(el("span",null,"Срок")); l3.appendChild(due);
+    var l4 = el("label"); l4.appendChild(el("span",null,"Исполнитель")); l4.appendChild(exec);
     var add = el("button","btn","Добавить");
     add.addEventListener("click", function(){
       if(!what.value.trim()) return;
-      send("add","Задачи",{row:{"создана":today(),"что":what.value.trim(),"кого":who.value.trim(),"срок":due.value,"кто":"Артур","сделано":"нет"}})
-        .then(function(){ return afterWrite("Задача добавлена"); })
-        .catch(function(e){ toast("Ошибка: " + e.message); });
+      var row = {"создана":today(), "что":what.value.trim(), "кого":who.value.trim(),
+                 "срок":due.value, "кто":"Артур", "сделано":"нет", "исполнитель":exec.value};
+      localAdd("Задачи", copyOf(row));
+      what.value = ""; who.value = "";
+      render();
+      bg(send("add","Задачи",{row:row}).then(function(){
+        return load().then(render);
+      }), exec.value === "Настя" ? "Задача ушла Насте" : "Задача добавлена");
     });
-    form.appendChild(l1); form.appendChild(l2); form.appendChild(l3); form.appendChild(add);
+    form.appendChild(l1); form.appendChild(l2); form.appendChild(l4);
+    form.appendChild(l3); form.appendChild(add);
     t.appendChild(form);
 
     var list = openTasks().sort(function(a,b){ return String(a["срок"]).localeCompare(String(b["срок"])); });
@@ -746,7 +754,7 @@
     } else {
       var tw = el("div","tbl-wrap"); tw.style.marginTop = "14px";
       var tb = document.createElement("table");
-      tb.appendChild(head(["Срок","Что","Кого","",""]));
+      tb.appendChild(head(["Срок","Что","Кого","Исполнитель","",""]));
       var body = document.createElement("tbody");
       list.forEach(function(row){
         var tr = document.createElement("tr");
@@ -756,6 +764,11 @@
         d.appendChild(pill); tr.appendChild(d);
         tr.appendChild(el("td", null, row["что"]));
         tr.appendChild(el("td","muted", row["кого"]));
+        var ex = el("td");
+        var who2 = String(row["исполнитель"] || "").trim();
+        ex.appendChild(el("span", who2 === "Настя" ? "pill pill-grape" : "pill",
+                          who2 || "ничья"));
+        tr.appendChild(ex);
         var a = el("td");
         var done = el("button","link","готово");
         done.addEventListener("click", function(){
@@ -850,7 +863,7 @@
       var a = el("td");
       var mk = el("button","link","в задачи");
       mk.addEventListener("click", function(){
-        send("add","Задачи",{row:{"создана":today(),"что":"Написать " + row["ник"],"кого":row["ник"],"срок":today(),"кто":"Артур","сделано":"нет"}})
+        send("add","Задачи",{row:{"создана":today(),"что":"Написать " + row["ник"],"кого":row["ник"],"срок":today(),"кто":"Артур","сделано":"нет","исполнитель":"Настя"}})
           .then(function(){ return afterWrite("Добавлено в задачи"); })
           .catch(function(e){ toast("Ошибка: " + e.message); });
       });
@@ -1150,6 +1163,8 @@
   /* ——— Ученики ——— */
 
   var DIR_SUBJ = ["математика", "химия"];
+  /* Кто делает задачу. Пусто — ничья, видна обоим. */
+  var TASK_WHO = ["Артур", "Настя"];
   var DIR_FMT  = ["группа", "индивидуально"];
 
   function paidBy(name){
