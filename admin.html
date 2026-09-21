@@ -83,6 +83,15 @@
   .dhead .t{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;
             color:var(--muted)}
   /* переключатель форматов над списком групп */
+  /* источник: список плюс свои значения */
+  .src{display:grid;gap:6px}
+  .src-row{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+  .src-row select,.src-row input{flex:1 1 180px;min-width:150px}
+  .src-b{background:none;border:1px solid var(--line);border-radius:8px;color:var(--ink);
+         font:500 13px/1 var(--sans);padding:8px 10px;cursor:pointer;white-space:nowrap}
+  .src-b:hover{background:var(--accent-soft)}
+  .src .col-hint{margin:0}
+
   /* контакты в карточке ученика */
   .cts{margin-top:16px;display:grid;gap:8px}
   .cts-head{display:flex;gap:9px;align-items:center;flex-wrap:wrap}
@@ -1440,6 +1449,104 @@
     return String((k === "discord" ? discordText(r[k]) : r[k]) || "").trim();
   }
 
+  /* ——— источник ———
+     Список складывается из двух базовых и всего, что уже проставлено ученикам.
+     Свой источник заводится прямо в карточке, убрать его можно только вместе
+     с очисткой у всех, у кого он стоит, — поэтому с предупреждением. */
+  function srcList(cur){
+    var out = [""].concat(PUPIL_SRC);
+    usedVals(DATA["Ученики"], "источник").forEach(function(v){
+      if(out.indexOf(v) < 0) out.push(v);
+    });
+    if(cur && out.indexOf(cur) < 0) out.push(cur);
+    return out;
+  }
+  function mkSource(cur){
+    var box = el("div","src");
+    var sel = mkSel(srcList(cur), cur || "");
+    var add = el("button","src-b","+");
+    add.type = "button"; add.title = "добавить свой источник";
+    var del = el("button","src-b","✕");
+    del.type = "button"; del.title = "убрать источник из списка";
+    var row = el("div","src-row");
+    row.appendChild(sel); row.appendChild(add); row.appendChild(del);
+    box.appendChild(row);
+    var note = el("p","col-hint","");
+    note.hidden = true;
+    box.appendChild(note);
+    var armed = false, editing = false;
+
+    function say(t){ note.textContent = t || ""; note.hidden = !t; }
+    function syncDel(){
+      var v = sel.value;
+      del.hidden = !v || PUPIL_SRC.indexOf(v) >= 0;
+      armed = false; del.textContent = "✕";
+    }
+    sel.addEventListener("change", function(){ say(""); syncDel(); });
+
+    add.addEventListener("click", function(){
+      if(editing) return;
+      editing = true;
+      var inp = mkInp("text", "как о нас узнали");
+      var ok  = el("button","src-b","ок");     ok.type = "button";
+      var no  = el("button","src-b","отмена"); no.type = "button";
+      var line = el("div","src-row");
+      line.appendChild(inp); line.appendChild(ok); line.appendChild(no);
+      box.insertBefore(line, note);
+      inp.focus();
+      function close(){ box.removeChild(line); editing = false; }
+      ok.addEventListener("click", function(){
+        var v = inp.value.trim();
+        if(!v){ close(); return; }
+        if(srcList("").indexOf(v) < 0){
+          var o = document.createElement("option");
+          o.value = v; o.textContent = v;
+          sel.appendChild(o);
+        }
+        sel.value = v;
+        close(); syncDel();
+        say("Появится в списке у всех, как только карточка сохранится.");
+      });
+      no.addEventListener("click", close);
+      inp.addEventListener("keydown", function(e){
+        if(e.key === "Enter"){ e.preventDefault(); ok.click(); }
+        if(e.key === "Escape"){ e.preventDefault(); close(); }
+      });
+    });
+
+    del.addEventListener("click", function(){
+      var v = sel.value;
+      if(!v || PUPIL_SRC.indexOf(v) >= 0) return;
+      var who = DATA["Ученики"].filter(function(p){
+        return String(p["источник"] || "").trim() === v;
+      });
+      if(!armed){
+        armed = true;
+        del.textContent = "точно убрать?";
+        say("«" + v + "» стоит у " + who.length + " " +
+            (who.length === 1 ? "ученика" : "учеников") +
+            ". Источник сотрётся у всех, кому он проставлен.");
+        return;
+      }
+      armed = false; del.textContent = "✕";
+      who.forEach(function(p){ localPatch("Ученики", p.id, {"источник":""}); });
+      Array.from(sel.options).forEach(function(o){ if(o.value === v) sel.removeChild(o); });
+      sel.value = "";
+      syncDel();
+      say(who.length ? "Убрал у " + who.length + "." : "Убрал.");
+      if(who.length){
+        bg(who.reduce(function(chain, p){
+          return chain.then(function(){
+            return send("update","Ученики",{id:p.id, row:{"источник":""}});
+          });
+        }, Promise.resolve()), "Источник убран");
+      }
+    });
+    syncDel();
+    Object.defineProperty(box, "value", { get: function(){ return sel.value; } });
+    return box;
+  }
+
   var WDAYS = [["пн","понедельник"],["вт","вторник"],["ср","среда"],["чт","четверг"],
                ["пт","пятница"],["сб","суббота"],["вс","воскресенье"]];
   var WCODES = WDAYS.map(function(x){ return x[0]; });
@@ -2092,13 +2199,18 @@
       f["ученик"]    = mkInp("text", "", r["ученик"]);
       f["класс"]     = mkSel([""].concat(PUPIL_KL), r["класс"]);
       f["родитель"]  = mkInp("text", "", r["родитель"]);
-      f["источник"]  = mkSel([""].concat(PUPIL_SRC), r["источник"]);
+      f["источник"]  = mkSource(r["источник"]);
       f["старт"]     = mkInp("date", "", r["старт"]);
       f["окончание"] = mkInp("date", "", r["окончание"]);
       var form2 = el("div","form");
       [["Ученик","ученик"],["Класс","класс"],["Родитель","родитель"],
        ["Источник","источник"],["Старт","старт"],["Окончание","окончание"]]
-        .forEach(function(pair){ form2.appendChild(fld(pair[0], f[pair[1]])); });
+        .forEach(function(pair){
+          /* источник — не просто поле, внутри кнопки: label им мешает */
+          form2.appendChild(pair[1] === "источник"
+            ? fldBox(pair[0], f[pair[1]], true)
+            : fld(pair[0], f[pair[1]]));
+        });
       b.appendChild(form2);
 
       /* ——— контакты ———
