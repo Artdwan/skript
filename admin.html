@@ -94,6 +94,8 @@
   .form .checks label, .checks label{display:flex;gap:7px;align-items:center;font-size:15px;
                 color:var(--ink);cursor:pointer;margin:0}
   .checks input[type=checkbox]{width:17px;height:17px;margin:0;accent-color:var(--accent)}
+  .grow.clickable{cursor:pointer}
+  .grow.clickable:hover, .grow.sel{background:var(--accent-soft)}
   .dir{padding:11px 0;border-top:1px solid var(--line)}
   .dir:first-of-type{border-top:0;padding-top:2px}
   .dir-line{display:flex;gap:10px;flex-wrap:wrap;align-items:baseline}
@@ -216,6 +218,7 @@
   var pupilOpen = null;
   var pupilEdit = false;
   var payEdit = null;
+  var groupOpen = null;
   var dirEdit = null;
   var dirAdd = false;
   var pupilF = {q:"", subj:"", klass:"", fmt:"", group:"", st:""};
@@ -223,7 +226,7 @@
   var app = document.getElementById("app");
 
   document.addEventListener("keydown", function(ev){
-    if(ev.key === "Escape" && pupilOpen) closeDrawer();
+    if(ev.key === "Escape" && (pupilOpen || groupOpen)) closeDrawer();
   });
 
   function toast(msg){
@@ -389,7 +392,7 @@
       var n = countFor(t.id);
       if(n !== null){ var s = el("span","n", n); b.appendChild(s); }
       b.setAttribute("aria-selected", tab === t.id ? "true" : "false");
-      b.addEventListener("click", function(){ tab = t.id; pupilOpen = null; pupilEdit = false; payEdit = null; dirEdit = null; dirAdd = false; render(); });
+      b.addEventListener("click", function(){ tab = t.id; pupilOpen = null; pupilEdit = false; payEdit = null; dirEdit = null; dirAdd = false; groupOpen = null; render(); });
       nav.appendChild(b);
     });
     var rb = el("button","tab","Обновить");
@@ -931,32 +934,16 @@
           var pl = pupilsOf(g["название"]);
           var cnt = el("span", pl.length ? "pill" : "pill pill-warn", pl.length + " из 7");
           line.appendChild(nm); line.appendChild(cl); line.appendChild(cnt);
-          if(g.__tmp){
-            line.appendChild(el("span","muted","пишу…"));
-          } else {
-            /* Удаление группы: два нажатия. Пока в ней есть ученики — не даём,
-               иначе их направления повиснут на несуществующей группе. */
-            var gd = el("button","link","удалить");
-            var armedG = false;
-            gd.addEventListener("click", function(){
-              if(pl.length){
-                toast("В группе " + pl.length + " — сначала переведи их в другую");
-                return;
-              }
-              if(!armedG){
-                armedG = true;
-                var past = DATA["Направления"].filter(function(d){
-                  return String(d["группа"] || "").trim() === String(g["название"] || "").trim();
-                }).length;
-                gd.textContent = past ? "точно удалить? в ней ещё " + past + " бывших"
-                                      : "точно удалить?";
-                return;
-              }
-              localDrop("Группы", g.id);
-              render();
-              bg(send("delete","Группы",{id:g.id}), "Группа удалена");
+          var ab = String(g["абонемент"] || "").trim();
+          line.appendChild(el("span", ab ? "pill" : "pill pill-warn",
+                              ab ? ab + " в месяц" : "цена не задана"));
+          if(g.__tmp) line.appendChild(el("span","muted","пишу…"));
+          if(!g.__tmp){
+            r.className = "grow clickable";
+            r.addEventListener("click", function(){
+              groupOpen = g.id; pupilOpen = null; render();
             });
-            line.appendChild(gd);
+            if(String(groupOpen) === String(g.id)) r.classList.add("sel");
           }
           r.appendChild(line);
           var days = el("div","muted", [g["дни"], g["преподаватель"]].filter(Boolean).join(" · "));
@@ -1008,6 +995,156 @@
       });
       w.appendChild(lp);
     }
+
+    if(groupOpen) renderGroupDrawer(w, groupOpen);
+  }
+
+  /* ——— карточка группы: цена абонемента и всё остальное ——— */
+
+  function renderGroupDrawer(w, id){
+    var g = DATA["Группы"].filter(function(x){ return String(x.id) === String(id); })[0];
+    if(!g){ groupOpen = null; return; }
+
+    var back = el("div","dback");
+    back.addEventListener("click", closeDrawer);
+    w.appendChild(back);
+
+    var d = el("aside","drawer");
+    var hd = el("div","dhead");
+    hd.appendChild(el("div","t","Карточка группы"));
+    var x = el("button","dx","Закрыть ✕");
+    x.addEventListener("click", closeDrawer);
+    hd.appendChild(x);
+    d.appendChild(hd);
+
+    var b = el("div","dbody");
+    var h = el("div", null, g["название"]);
+    h.style.font = "600 24px/1.2 var(--display)";
+    b.appendChild(h);
+    var pl = pupilsOf(g["название"]);
+    var meta = el("p","muted",
+      [g["класс"] ? g["класс"] + " класс" : "", g["предмет"], g["формат"], g["дни"]]
+        .filter(Boolean).join(" · "));
+    meta.style.margin = "4px 0 12px";
+    b.appendChild(meta);
+
+    var tags = el("div","card-tags");
+    tags.style.margin = "0 0 16px";
+    var abNow = String(g["абонемент"] || "").trim();
+    tags.appendChild(el("span", abNow ? "pill" : "pill pill-warn",
+                        abNow ? abNow + " в месяц" : "цена не задана"));
+    tags.appendChild(el("span", pl.length ? "pill" : "pill pill-warn", pl.length + " из 7"));
+    b.appendChild(tags);
+
+    var f = {};
+    f["название"]      = mkInp("text", "", g["название"]);
+    f["предмет"]       = mkSel(DIR_SUBJ, g["предмет"]);
+    f["класс"]         = mkSel([""].concat(PUPIL_KL), g["класс"]);
+    f["формат"]        = mkSel(usedVals(DATA["Группы"], "формат").concat(
+                                 usedVals(DATA["Группы"], "формат").indexOf("группа") > -1
+                                   ? [] : ["группа"]), g["формат"] || "группа");
+    f["абонемент"]     = mkInp("number", "260", g["абонемент"]);
+    f["дни"]           = mkInp("text", "вт, чт 17:00", g["дни"]);
+    f["преподаватель"] = mkInp("text", "кто ведёт", g["преподаватель"]);
+    var form = el("div","form");
+    [["Название","название"],["Предмет","предмет"],["Класс","класс"],["Формат","формат"],
+     ["Абонемент","абонемент"],["Дни","дни"],["Преподаватель","преподаватель"]]
+      .forEach(function(pair){ form.appendChild(fld(pair[0], f[pair[1]])); });
+    b.appendChild(form);
+    b.appendChild(el("p","col-hint",
+      "Абонемент группы подставляется всем её ученикам. Если у кого-то цена своя — " +
+      "скидка или старый тариф — она ставится в его направлении и перебивает групповую."));
+
+    var note = document.createElement("textarea");
+    note.rows = 2;
+    note.placeholder = "о чём помнить";
+    note.value = g["заметка"] || "";
+    var nl = el("label");
+    nl.style.display = "grid"; nl.style.gap = "4px";
+    nl.style.fontSize = "12.5px"; nl.style.color = "var(--muted)";
+    nl.style.marginTop = "10px";
+    nl.appendChild(el("span", null, "Заметка"));
+    nl.appendChild(note);
+    b.appendChild(nl);
+
+    var acts = el("div","row-actions");
+    acts.style.marginTop = "14px";
+    var save = el("button","btn","Сохранить");
+    save.addEventListener("click", function(){
+      var nm = f["название"].value.trim();
+      if(!nm){ toast("Название не может быть пустым"); return; }
+      var dup = DATA["Группы"].some(function(x){
+        return String(x.id) !== String(g.id) &&
+               String(x["название"] || "").trim().toLowerCase() === nm.toLowerCase();
+      });
+      if(dup){ toast("Группа с таким названием уже есть"); return; }
+      var patch = {};
+      Object.keys(f).forEach(function(k){ patch[k] = f[k].value; });
+      patch["название"] = nm;
+      patch["заметка"] = note.value;
+      var was = String(g["название"] || "").trim();
+      /* переименование тянет за собой направления — они ссылаются по названию */
+      var moves = was !== nm ? DATA["Направления"].filter(function(x){
+        return String(x["группа"] || "").trim() === was; }) : [];
+      localPatch("Группы", g.id, patch);
+      moves.forEach(function(x){ localPatch("Направления", x.id, {"группа":nm}); });
+      render();
+      bg(send("update","Группы",{id:g.id, row:patch}).then(function(){
+        return moves.reduce(function(chain, x){
+          return chain.then(function(){
+            return send("update","Направления",{id:x.id, row:{"группа":nm}});
+          });
+        }, Promise.resolve());
+      }), "Сохранено");
+    });
+    var cancel = el("button","btn btn-ghost","Закрыть");
+    cancel.addEventListener("click", closeDrawer);
+    /* Удаление: два нажатия, и только пока в группе нет учащихся. */
+    var del = el("button","link","Удалить группу");
+    var armedG = false;
+    del.addEventListener("click", function(){
+      if(pl.length){ toast("В группе " + pl.length + " — сначала переведи их в другую"); return; }
+      if(!armedG){
+        armedG = true;
+        var past = DATA["Направления"].filter(function(x){
+          return String(x["группа"] || "").trim() === String(g["название"] || "").trim();
+        }).length;
+        del.textContent = past ? "точно удалить? в ней ещё " + past + " бывших"
+                               : "точно удалить?";
+        return;
+      }
+      localDrop("Группы", g.id);
+      groupOpen = null;
+      render();
+      bg(send("delete","Группы",{id:g.id}), "Группа удалена");
+    });
+    acts.appendChild(save); acts.appendChild(cancel); acts.appendChild(del);
+    b.appendChild(acts);
+
+    var ps = el("div","dsec");
+    ps.appendChild(el("div","dsec-h","Кто занимается"));
+    if(!pl.length){
+      ps.appendChild(el("p","empty","Пока никого."));
+    } else {
+      pl.forEach(function(x){
+        var row = el("div","dir");
+        var line = el("div","dir-line");
+        line.appendChild(el("strong", null, x["ученик"]));
+        var mine = dirsOf(x["ученик"]).filter(function(dd){
+          return String(dd["группа"] || "").trim() === String(g["название"] || "").trim(); })[0];
+        if(mine){
+          var pr = dirPrice(mine);
+          line.appendChild(el("span", pr ? "pill" : "pill pill-warn", pr || "цена не указана"));
+          if(dirOwnPrice(mine)) line.appendChild(el("span","muted","своя цена"));
+        }
+        row.appendChild(line);
+        ps.appendChild(row);
+      });
+    }
+    b.appendChild(ps);
+
+    d.appendChild(b);
+    w.appendChild(d);
   }
 
   /* ——— Ученики ——— */
@@ -1059,13 +1196,30 @@
     });
   }
   function isInd(d){ return String(d["формат"] || "").trim() === "индивидуально"; }
+  function groupByName(name){
+    name = String(name === undefined || name === null ? "" : name).trim();
+    if(!name) return null;
+    var g = DATA["Группы"].filter(function(x){
+      return String(x["название"] || "").trim() === name;
+    });
+    return g.length ? g[0] : null;
+  }
+  /* Месячная цена направления: своя, если проставлена, иначе цена группы.
+     Своя цена — это и есть скидка или старый тариф конкретного ученика. */
+  function dirMonth(d){
+    var a = String(d["абонемент"] || "").trim();
+    if(a) return a;
+    var g = groupByName(d["группа"]);
+    return g ? String(g["абонемент"] || "").trim() : "";
+  }
+  function dirOwnPrice(d){ return !!String(d["абонемент"] || "").trim(); }
   function dirPrice(d){
     if(isInd(d)){
       var c = String(d["цена_занятия"] || "").trim();
       var m = String(d["минуты"] || "").trim();
       return c ? (c + " за занятие" + (m ? " по " + m + " мин" : "")) : "";
     }
-    var a = String(d["абонемент"] || "").trim();
+    var a = dirMonth(d);
     return a ? (a + " в месяц") : "";
   }
   function dirLine(d){
@@ -1080,7 +1234,7 @@
   function monthSum(name){
     return dirsOf(name).reduce(function(a, d){
       if(isInd(d)) return a;
-      return a + (parseFloat(String(d["абонемент"]).replace(",", ".")) || 0);
+      return a + (parseFloat(String(dirMonth(d)).replace(",", ".")) || 0);
     }, 0);
   }
   function priceText(r){
@@ -1089,7 +1243,17 @@
 
   /* ——— фильтры на вкладке «Ученики» ——— */
 
-  var PUPIL_ST = ["учится", "ждём", "пауза", "ушёл"];
+  var PUPIL_ST  = ["учится", "ждём", "пауза", "ушёл"];
+  var PUPIL_KL  = ["5", "6", "7", "8", "9", "10", "11"];
+  var PUPIL_SRC = ["сарафан", "инста"];
+  /* Скидки берутся из справочника фактов и нигде больше не задаются.
+     50% — только новым и только на первый абонемент, на группу.
+     30% — при оплате трёх и более абонементов, на любой формат. */
+  var PAY_DISC = [
+    {name:"без скидки",                  k:0,   note:"",                              grpOnly:false},
+    {name:"50% — первый абонемент",      k:0.5, note:"скидка 50%, первый абонемент",  grpOnly:true},
+    {name:"30% — 3 и более абонементов", k:0.3, note:"скидка 30%, три и более абонементов", grpOnly:false}
+  ];
 
   function pupilMatch(r){
     var f = pupilF, ds = dirsOf(r["ученик"]);
@@ -1181,7 +1345,7 @@
     p.appendChild(el("h3", null, "Новый ученик"));
     var form = el("div","form");
     var fName = mkInp("text", "имя как в журнале");
-    var fKl   = mkInp("text", "9");
+    var fKl   = mkSel([""].concat(PUPIL_KL), "");
     var fSub  = mkSel(DIR_SUBJ, "математика");
     var fFmt  = mkSel(DIR_FMT, "группа");
     var fGrp  = mkSel(groupOpts(""), "");
@@ -1304,7 +1468,7 @@
     rows.forEach(function(row){
       var tr = document.createElement("tr");
       tr.className = "clickable" + (String(pupilOpen) === String(row.id) ? " sel" : "");
-      tr.addEventListener("click", function(){ pupilOpen = row.id; pupilEdit = false; payEdit = null; dirEdit = null; dirAdd = false; render(); });
+      tr.addEventListener("click", function(){ pupilOpen = row.id; pupilEdit = false; payEdit = null; dirEdit = null; dirAdd = false; groupOpen = null; render(); });
       var nm = el("td");
       nm.appendChild(el("strong", null, row["ученик"]));
       var stt = pupilState(row);
@@ -1356,8 +1520,8 @@
   }
 
   function closeDrawer(){
-    if(!pupilOpen) return;
-    pupilOpen = null; pupilEdit = false; payEdit = null; dirEdit = null; dirAdd = false; render();
+    if(!pupilOpen && !groupOpen) return;
+    pupilOpen = null; pupilEdit = false; payEdit = null; dirEdit = null; dirAdd = false; groupOpen = null; render();
   }
 
   /* Поля одного направления: предмет, формат и цена того формата. */
@@ -1366,7 +1530,7 @@
     f.subj = mkSel(DIR_SUBJ, d["предмет"] || "математика");
     f.fmt  = mkSel(DIR_FMT,  d["формат"]  || "группа");
     f.grp  = mkSel(groupOpts(d["группа"]), d["группа"] || "");
-    f.ab   = mkInp("number", "260",  d["абонемент"]);
+    f.ab   = mkInp("number", "по группе", d["абонемент"]);
     f.pr   = mkInp("number", "цена", d["цена_занятия"]);
     f.min  = mkInp("number", "мин",  d["минуты"]);
     var form = el("div","form"), wr = {};
@@ -1382,6 +1546,13 @@
       wr["Длительность, мин"].style.display = g ? "none" : "";
     }
     f.fmt.addEventListener("change", sync);
+    function hintFromGroup(){
+      var g = groupByName(f.grp.value);
+      var price = g ? String(g["абонемент"] || "").trim() : "";
+      f.ab.placeholder = price ? "по группе " + price : "цена группы не задана";
+    }
+    f.grp.addEventListener("change", hintFromGroup);
+    hintFromGroup();
     sync();
     f.form = form;
     f.row = function(name){
@@ -1432,6 +1603,8 @@
           String(d["формат"] || "") + (d["группа"] ? " · " + d["группа"] : "")));
         var pr = dirPrice(d);
         line.appendChild(el("span", pr ? "pill" : "pill pill-warn", pr || "цена не указана"));
+        if(!isInd(d) && dirOwnPrice(d) && groupByName(d["группа"]))
+          line.appendChild(el("span","muted","своя цена"));
         if(d.__tmp){
           line.appendChild(el("span","muted","пишу…"));
         } else {
@@ -1523,8 +1696,7 @@
       var view = el("div","kv");
       [["Класс", r["класс"]], ["Родитель", r["родитель"]],
        ["Источник", r["источник"]], ["Discord", discordText(r["discord"])],
-       ["Старт", r["старт"]], ["Перерыв с", r["перерыв_с"]],
-       ["Перерыв по", r["перерыв_по"]], ["Окончание", r["окончание"]]]
+       ["Старт", r["старт"]], ["Окончание", r["окончание"]]]
         .forEach(function(pair){
           var cell = el("div");
           cell.appendChild(el("div","k", pair[0]));
@@ -1549,24 +1721,22 @@
     } else {
       var f = {};
       f["ученик"]    = mkInp("text", "", r["ученик"]);
-      f["класс"]     = mkInp("text", "", r["класс"]);
+      f["класс"]     = mkSel([""].concat(PUPIL_KL), r["класс"]);
       f["родитель"]  = mkInp("text", "", r["родитель"]);
-      f["источник"]  = mkInp("text", "реклама, сарафан…", r["источник"]);
+      f["источник"]  = mkSel([""].concat(PUPIL_SRC), r["источник"]);
       f["discord"]   = mkInp("text", "ник в дискорде", discordText(r["discord"]));
       f["старт"]     = mkInp("date", "", r["старт"]);
-      f["перерыв_с"] = mkInp("date", "", r["перерыв_с"]);
-      f["перерыв_по"]= mkInp("date", "", r["перерыв_по"]);
       f["окончание"] = mkInp("date", "", r["окончание"]);
       var form2 = el("div","form");
       [["Ученик","ученик"],["Класс","класс"],["Родитель","родитель"],
        ["Источник","источник"],["Discord","discord"],["Старт","старт"],
-       ["Перерыв с","перерыв_с"],["Перерыв по","перерыв_по"],["Окончание","окончание"]]
+       ["Окончание","окончание"]]
         .forEach(function(pair){ form2.appendChild(fld(pair[0], f[pair[1]])); });
       b.appendChild(form2);
       b.appendChild(el("p","col-hint",
         "Предметы, форматы и цены правятся ниже, в направлениях. Статус считается сам: " +
-        "до старта — «начнёт», внутри перерыва — «перерыв», " +
-        "после даты окончания — «ушёл». Отдельно его выставлять не нужно."));
+        "до даты старта — «начнёт», после даты окончания — «ушёл». " +
+        "Отдельно его выставлять не нужно."));
 
       var note = document.createElement("textarea");
       note.rows = 2;
@@ -1656,17 +1826,36 @@
     pf.style.marginTop = "12px";
     var pday = mkInp("date", "", today());
     var ms = monthSum(r["ученик"]);
-    var amt  = mkInp("number", ms ? String(ms) : "");
+    var amt  = mkInp("number", ms ? String(ms) : "", ms ? String(ms) : "");
+    var disc = mkSel(PAY_DISC.map(function(x){ return x.name; }), PAY_DISC[0].name);
     var chek = mkSel(["нет","да"], "нет");
     var padd = el("button","btn","Записать оплату");
-    [["Дата",pday],["Сумма",amt],["Чек",chek]].forEach(function(pair){
+    var hasGrp = dirsOf(r["ученик"]).some(function(x){ return !isInd(x); });
+    function discOf(){
+      return PAY_DISC.filter(function(x){ return x.name === disc.value; })[0] || PAY_DISC[0];
+    }
+    /* Скидка только пересчитывает подсказку суммы — вписать своё число всегда можно. */
+    disc.addEventListener("change", function(){
+      var x = discOf();
+      if(x.grpOnly && !hasGrp){
+        toast("Эта скидка только на групповой абонемент");
+        disc.value = PAY_DISC[0].name;
+        x = PAY_DISC[0];
+      }
+      if(!ms){
+        if(x.k) toast("Месячная цена не задана — сумму впиши сам");
+        return;
+      }
+      amt.value = String(Math.round(ms * (1 - x.k) * 100) / 100);
+    });
+    [["Дата",pday],["Сумма",amt],["Скидка",disc],["Чек",chek]].forEach(function(pair){
       pf.appendChild(fld(pair[0], pair[1]));
     });
     pf.appendChild(padd);
     padd.addEventListener("click", function(){
       if(!amt.value){ toast("Сумма пустая"); return; }
       var row = {"дата":pday.value || today(), "ученик":r["ученик"],
-                 "сумма":amt.value, "чек":chek.value, "заметка":""};
+                 "сумма":amt.value, "чек":chek.value, "заметка":discOf().note};
       var copy = {}; Object.keys(row).forEach(function(k){ copy[k] = row[k]; });
       localAdd("Оплаты", copy);
       render();
