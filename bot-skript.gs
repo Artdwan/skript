@@ -22,7 +22,7 @@ var SHEETS = {
   'Ученики': ['id','ученик','класс','предмет','формат','группа','абонемент','родитель','источник','старт','discord','holst','статус','заметка','перерыв_с','перерыв_по','окончание','инд_цена','инд_минуты'],
   'Направления': ['id','ученик','предмет','формат','группа','абонемент','цена_занятия','минуты','заметка'],
   'Оплаты':  ['id','дата','ученик','месяц','сумма','чек','заметка'],
-  'Задачи':  ['id','создана','что','кого','срок','кто','сделано','текст'],
+  'Задачи':  ['id','создана','что','кого','срок','кто','сделано','текст','исполнитель'],
   'Контакты':['id','создан','ник','пробное','телеграм','вайбер','почта','ключ']
 };
 
@@ -207,15 +207,24 @@ function doGet(e) {
   }
   // Открытые задачи для страницы скрипта. Без ключа - по решению Артура,
   // страница публичная, значит и этот список публичный.
+  // ?for=Настя отдаёт только её задачи и незакреплённые.
   if (p.action === 'tasks') {
-    return json({ ok: true, tasks: openTasks() });
+    return json({ ok: true, tasks: openTasks(p['for']) });
   }
   return ContentService.createTextOutput('АртТич: приёмник записи пробного работает.');
 }
 
-function openTasks() {
+/**
+ * Открытые задачи. Если передан исполнитель - только его и те,
+ * у кого исполнитель не проставлен: они общие и видны обоим.
+ */
+function openTasks(forWho) {
+  var who = String(forWho || '').trim().toLowerCase();
   return readSheet('Задачи').filter(function (t) {
-    return String(t['сделано']).toLowerCase() !== 'да';
+    if (String(t['сделано']).toLowerCase() === 'да') return false;
+    if (!who) return true;
+    var owner = String(t['исполнитель'] || '').trim().toLowerCase();
+    return !owner || owner === who;
   });
 }
 
@@ -229,7 +238,7 @@ function taskPost(d) {
     var was = taskById(d.id);
     updateRow('Задачи', d.id, { 'сделано': 'да' });
     taskNote('Задача закрыта', was, d.from || 'Настя');
-    return json({ ok: true, tasks: openTasks() });
+    return json({ ok: true, tasks: openTasks(d['for']) });
   }
   var what = String(d.what || '').trim();
   if (!what) return json({ ok: false, error: 'пустая задача' });
@@ -240,11 +249,12 @@ function taskPost(d) {
     'срок':    String(d.due || '').trim().slice(0, 20),
     'кто':     String(d.from || 'Настя').slice(0, 40),
     'сделано': 'нет',
-    'текст':   String(d.text || '').slice(0, 2000)
+    'текст':   String(d.text || '').slice(0, 2000),
+    'исполнитель': String(d.to || '').trim().slice(0, 40)
   };
   addRow('Задачи', row);
   taskNote('Новая задача', row, row['кто']);
-  return json({ ok: true, tasks: openTasks() });
+  return json({ ok: true, tasks: openTasks(d['for']) });
 }
 
 function taskById(id) {
@@ -261,6 +271,7 @@ function taskNote(head, row, who) {
   var lines = [head, row['что'] || ''];
   if (row['кого']) lines.push('Кого: ' + row['кого']);
   if (row['срок']) lines.push('Срок: ' + row['срок']);
+  if (row['исполнитель']) lines.push('Исполнитель: ' + row['исполнитель']);
   if (who) lines.push('Кто: ' + who);
   tgTasks(lines.join('\n'));
 }
