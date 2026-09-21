@@ -282,13 +282,26 @@
     return queue;
   }
 
+  /* Ключ сменили или отозвали: стираем его из браузера и просим новый.
+     Иначе на экране остался бы висеть старый срез данных. */
+  function keyDied(e){
+    if(!e || !/ключ/i.test(String(e.message || e))) return false;
+    key = "";
+    try{ localStorage.removeItem(KEY_STORE); }catch(e2){}
+    Object.keys(DATA).forEach(function(n){ DATA[n] = []; });
+    CAL = [];
+    renderGate("Ключ больше не подходит. Введите новый.");
+    return true;
+  }
+
   /* Изменения сразу применяются к локальным данным, а запрос уходит фоном.
      Если запись не прошла — говорим об этом и перечитываем таблицу заново. */
   function bg(promise, okMsg){
     return promise.then(function(){ if(okMsg) toast(okMsg); })
       .catch(function(e){
+        if(keyDied(e)) return;
         toast("Не сохранилось: " + e.message);
-        return load().then(render).catch(function(){});
+        return load().then(render).catch(function(e2){ keyDied(e2); });
       });
   }
   function localPatch(sheet, id, patch){
@@ -397,7 +410,9 @@
     });
     var rb = el("button","tab","Обновить");
     rb.addEventListener("click", function(){
-      Promise.all([load(), loadCalendar()]).then(function(){ render(); toast("Обновлено"); });
+      Promise.all([load(), loadCalendar()])
+        .then(function(){ render(); toast("Обновлено"); })
+        .catch(function(e){ if(!keyDied(e)) toast("Не обновилось: " + e.message); });
     });
     nav.appendChild(rb);
     w.appendChild(nav);
