@@ -83,6 +83,16 @@
   .dhead .t{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;
             color:var(--muted)}
   /* переключатель форматов над списком групп */
+  /* плашки с цифрами над оплатами */
+  .stats{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));
+         margin:0 0 16px}
+  .stat{border:1px solid var(--line);border-radius:14px;background:var(--card);padding:15px 17px}
+  .stat-k{font:500 10.5px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;
+          color:var(--muted)}
+  .stat-v{font:600 30px/1.1 var(--display);color:var(--ink);margin:9px 0 6px;
+          font-variant-numeric:tabular-nums}
+  .stat-n{font-size:12.5px;color:var(--muted);line-height:1.35}
+
   /* источник: список плюс свои значения */
   .src{display:grid;gap:6px}
   .src-row{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
@@ -2492,7 +2502,68 @@
   }
 
 
+  /* ——— цифры над оплатами ———
+     Всего — по всем записям. Этот месяц — только те, у кого дата стоит.
+     Ожидание на следующий — сумма месячных абонементов тех, кто учится;
+     поурочные (пара, индивидуально) сюда не попадают: их месяц зависит
+     от числа занятий, а мы его не знаем. Скидки тоже не угадываем. */
+  function payStats(){
+    var all = 0, cur = 0, noDate = 0;
+    var m = today().slice(0, 7);
+    DATA["Оплаты"].forEach(function(o){
+      var v = parseFloat(String(o["сумма"] || "").replace(",", ".")) || 0;
+      all += v;
+      var d = String(o["дата"] || "").trim();
+      if(!d){ noDate++; return; }
+      if(d.slice(0, 7) === m) cur += v;
+    });
+    var next = 0, perLessonWho = [];
+    DATA["Ученики"].forEach(function(r){
+      if(pupilState(r).k !== "учится") return;
+      dirsOf(r["ученик"]).forEach(function(d){
+        if(perLesson(d)){
+          if(perLessonWho.indexOf(r["ученик"]) < 0) perLessonWho.push(r["ученик"]);
+          return;
+        }
+        next += parseFloat(String(dirMonth(d)).replace(",", ".")) || 0;
+      });
+    });
+    return {all:all, cur:cur, noDate:noDate, next:next, perLesson:perLessonWho.length, month:m};
+  }
+  function money(n){
+    return String(Math.round(n * 100) / 100);
+  }
+  function monthName(ym){
+    var names = ["январь","февраль","март","апрель","май","июнь",
+                 "июль","август","сентябрь","октябрь","ноябрь","декабрь"];
+    var i = parseInt(String(ym).slice(5, 7), 10) - 1;
+    return names[i] || ym;
+  }
+  function nextMonthName(ym){
+    var y = parseInt(String(ym).slice(0, 4), 10);
+    var i = parseInt(String(ym).slice(5, 7), 10);
+    return monthName((i === 12 ? (y + 1) : y) + "-" + (i === 12 ? "01" : String(i + 1)));
+  }
+  function statTile(label, value, note){
+    var s = el("div","stat");
+    s.appendChild(el("div","stat-k", label));
+    s.appendChild(el("div","stat-v", value));
+    s.appendChild(el("div","stat-n", note || ""));
+    return s;
+  }
+
   function renderPay(w){
+    var st = payStats();
+    var box = el("div","stats");
+    box.appendChild(statTile("Всего оплачено", money(st.all),
+      DATA["Оплаты"].length + " записей" + (st.noDate ? ", из них без даты " + st.noDate : "")));
+    box.appendChild(statTile(monthName(st.month) + ", оплачено", money(st.cur),
+      st.noDate ? "оплаты без даты сюда не попали" : "по датам оплат"));
+    box.appendChild(statTile(nextMonthName(st.month) + ", ожидается", money(st.next),
+      "абонементы тех, кто учится, без скидок" +
+      (st.perLesson ? "; ещё " + st.perLesson + " поурочно — зависит от числа занятий" : "")));
+    w.appendChild(box);
+
     var p = el("div","panel");
     p.appendChild(el("h3", null, "Новая оплата"));
     var form = el("div","form");
