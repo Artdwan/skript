@@ -2356,31 +2356,41 @@
     pf.style.marginTop = "12px";
     var pday = mkInp("date", "", today());
     var ms = monthSum(r["ученик"]);
-    var amt  = mkInp("number", ms ? String(ms) : "", ms ? String(ms) : "");
+    /* Две суммы, а не одна: скидка считается от полной, а платят итог.
+       Оплатили полтора месяца — вписываете полную сумму за них, а не абонемент. */
+    var full = mkInp("number", ms ? String(ms) : "сколько без скидки", ms ? String(ms) : "");
     var disc = mkSel(PAY_DISC.map(function(x){ return x.name; }), PAY_DISC[0].name);
+    var amt  = mkInp("number", ms ? String(ms) : "", ms ? String(ms) : "");
     var chek = mkSel(["нет","да"], "нет");
     var padd = el("button","btn","Записать оплату");
     var hasGrp = dirsOf(r["ученик"]).some(function(x){ return !isInd(x); });
     function discOf(){
       return PAY_DISC.filter(function(x){ return x.name === disc.value; })[0] || PAY_DISC[0];
     }
-    /* Скидка только пересчитывает подсказку суммы — вписать своё число всегда можно. */
+    var calc = el("p","col-hint","");
+    function recount(){
+      var base = parseFloat(String(full.value).replace(",", "."));
+      var x = discOf();
+      if(!(base > 0)){
+        calc.textContent = x.k ? "Впишите сумму без скидки — от неё считается скидка." : "";
+        return;
+      }
+      var out = Math.round(base * (1 - x.k) * 100) / 100;
+      amt.value = String(out);
+      calc.textContent = x.k ? (Math.round(x.k * 100) + "% от " + base + " — к оплате " + out)
+                             : "";
+    }
     disc.addEventListener("change", function(){
       var x = discOf();
       if(x.grpOnly && !hasGrp){
         toast("Эта скидка только на групповой абонемент");
         disc.value = PAY_DISC[0].name;
-        x = PAY_DISC[0];
       }
-      if(!ms){
-        if(x.k) toast("Месячная цена не задана — сумму впиши сам");
-        return;
-      }
-      amt.value = String(Math.round(ms * (1 - x.k) * 100) / 100);
+      recount();
     });
-    [["Дата",pday],["Сумма",amt],["Скидка",disc],["Чек",chek]].forEach(function(pair){
-      pf.appendChild(fld(pair[0], pair[1]));
-    });
+    full.addEventListener("change", recount);
+    [["Дата",pday],["Сумма без скидки",full],["Скидка",disc],["К оплате",amt],["Чек",chek]]
+      .forEach(function(pair){ pf.appendChild(fld(pair[0], pair[1])); });
     pf.appendChild(padd);
     padd.addEventListener("click", function(){
       if(!amt.value){ toast("Сумма пустая"); return; }
@@ -2394,6 +2404,11 @@
       }), "Оплата записана");
     });
     ps.appendChild(pf);
+    ps.appendChild(calc);
+    ps.appendChild(el("p","col-hint",
+      "Скидка считается от суммы без скидки — впишите туда то, что клиент платит " +
+      "за весь период: остаток месяца, месяц, два. «К оплате» можно поправить руками, " +
+      "если нужно округлить."));
     b.appendChild(ps);
 
     d.appendChild(b);
