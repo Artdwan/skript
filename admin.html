@@ -153,6 +153,14 @@
   .pill{display:inline-block;font:500 12px/1 var(--sans);padding:5px 9px;border-radius:999px;
         background:var(--accent-soft);color:var(--ink);white-space:nowrap}
   .pill-warn{background:var(--warn-soft);color:var(--warn)}
+  .twin{margin-top:14px;border:1px solid var(--line);border-left:3px solid var(--warn);
+        border-radius:10px;padding:12px 14px;background:var(--warn-soft)}
+  .twin-h{font:600 14.5px/1.35 var(--sans);margin:0 0 6px}
+  .twin ul{margin:0 0 8px;padding-left:18px}
+  .twin li{margin:2px 0}
+  .twin label{display:grid;gap:4px;font-size:12.5px;color:var(--muted);max-width:360px;margin-top:8px}
+  .twin .row-actions{margin-top:10px}
+  .twin .twin-bad{color:var(--warn);font-size:13px;margin:8px 0 0}
   .pill-grape{background:var(--grape-soft);color:var(--grape)}
   .muted{color:var(--muted)}
   .row-actions{display:flex;gap:8px;flex-wrap:wrap}
@@ -1425,6 +1433,52 @@
      и ценой. Математика в группе и химия индивидуально — два направления.
      Живут отдельным листом «Направления», привязка по имени ученика. */
 
+  /* ——— тёзки ———
+     Оплаты и предметы привязаны к имени, поэтому имя у каждого ученика своё.
+     Имена сравниваем без регистра, лишних пробелов и разницы «ё/е».
+     Уточнение в скобках — «Милана (9)» — при поиске тёзок отбрасываем:
+     иначе «Ваня» не увидел бы уже записанного «Ваня (10)». */
+  function nameKey(s){
+    return String(s === undefined || s === null ? "" : s)
+      .toLowerCase().replace(/ё/g, "е").replace(/\s+/g, " ").trim();
+  }
+  function baseName(s){
+    return nameKey(String(s === undefined || s === null ? "" : s).replace(/\s*\([^)]*\)\s*$/, ""));
+  }
+  function nameTaken(nm, exceptId){
+    var k = nameKey(nm);
+    return DATA["Ученики"].some(function(x){
+      return String(x.id) !== String(exceptId || "") && nameKey(x["ученик"]) === k;
+    });
+  }
+  function twinsOf(nm){
+    var b = baseName(nm);
+    return DATA["Ученики"].filter(function(x){ return baseName(x["ученик"]) === b; });
+  }
+  /* тот же ребёнок — это то же имя, тот же класс и тот же родитель */
+  function samePupil(x, kl, par){
+    return nameKey(x["класс"]) === nameKey(kl) && nameKey(x["родитель"]) === nameKey(par);
+  }
+  function pupilLine(x){
+    return x["ученик"] + " — " +
+      (x["класс"] ? x["класс"] + " класс" : "класс не указан") + ", " +
+      (x["родитель"] ? "родитель " + x["родитель"] : "родитель не указан");
+  }
+  /* Уточнение для нового тёзки: сначала класс, если он отличается,
+     потом класс с родителем, в крайнем случае номер. */
+  function suggestName(nm, kl, par, twins){
+    var base = String(nm).replace(/\s*\([^)]*\)\s*$/, "").replace(/\s+/g, " ").trim();
+    var sameKl = twins.some(function(x){ return nameKey(x["класс"]) === nameKey(kl); });
+    var cands = [];
+    if(kl && !sameKl) cands.push(base + " (" + kl + ")");
+    if(par) cands.push(base + " (" + (kl ? kl + ", " : "") + par + ")");
+    if(kl) cands.push(base + " (" + kl + ")");
+    for(var i = 0; i < cands.length; i++) if(!nameTaken(cands[i])) return cands[i];
+    var n = 2;
+    while(nameTaken(base + " " + n)) n++;
+    return base + " " + n;
+  }
+
   function dirsOf(name){
     name = String(name === undefined || name === null ? "" : name).trim();
     if(!name) return [];
@@ -1889,13 +1943,65 @@
     fFmt.addEventListener("change", syncNew);
     syncNew();
     form.appendChild(add);
-    add.addEventListener("click", function(){
-      var nm = fName.value.trim();
-      if(!nm){ toast("Без имени не запишу"); return; }
-      var dup = DATA["Ученики"].filter(function(r){
-        return String(r["ученик"]).toLowerCase() === nm.toLowerCase();
+    /* Вопрос про тёзку появляется под формой: запись не блокируется,
+       но имя нового ученика должно отличаться — к имени привязаны оплаты. */
+    var twinBox = el("div","twin");
+    twinBox.hidden = true;
+    function hideTwin(){ twinBox.hidden = true; twinBox.innerHTML = ""; }
+    [fName, fKl, fPar].forEach(function(x){
+      x.addEventListener("input", hideTwin);
+      x.addEventListener("change", hideTwin);
+    });
+    function askTwin(nm, kl, par, twins){
+      twinBox.innerHTML = "";
+      twinBox.appendChild(el("p","twin-h",
+        twins.length === 1 ? "Ученик с таким именем уже есть" : "Учеников с таким именем уже " + twins.length));
+      var ul = el("ul");
+      twins.forEach(function(x){ ul.appendChild(el("li", null, pupilLine(x))); });
+      twinBox.appendChild(ul);
+      twinBox.appendChild(el("p","col-hint",
+        "Класс или родитель другие — значит, это другой ребёнок. Имя у него должно быть своё: " +
+        "к имени привязаны оплаты и предметы, иначе они перемешаются. Допиши уточнение."));
+      var inp = mkInp("text", "", suggestName(nm, kl, par, twins));
+      twinBox.appendChild(fld("Записать нового как", inp));
+      var bad = el("p","twin-bad","");
+      bad.hidden = true;
+      twinBox.appendChild(bad);
+      var acts = el("div","row-actions");
+      var ok = el("button","btn","Записать");
+      var no = el("button","btn btn-ghost","Отмена");
+      ok.addEventListener("click", function(){
+        var v = inp.value.replace(/\s+/g, " ").trim();
+        if(!v){ bad.textContent = "Без имени не запишу."; bad.hidden = false; return; }
+        if(nameTaken(v)){
+          bad.textContent = "«" + v + "» тоже занято — уточни иначе.";
+          bad.hidden = false;
+          return;
+        }
+        doAdd(v);
       });
-      if(dup.length){ toast("Такой ученик уже есть"); return; }
+      inp.addEventListener("keydown", function(e){
+        if(e.key === "Enter"){ e.preventDefault(); ok.click(); }
+      });
+      no.addEventListener("click", hideTwin);
+      acts.appendChild(ok); acts.appendChild(no);
+      twinBox.appendChild(acts);
+      twinBox.hidden = false;
+      inp.focus();
+      inp.select();
+    }
+    add.addEventListener("click", function(){
+      var nm = fName.value.replace(/\s+/g, " ").trim();
+      if(!nm){ toast("Без имени не запишу"); return; }
+      var kl = fKl.value.trim(), par = fPar.value.trim();
+      var twins = twinsOf(nm);
+      var full = twins.filter(function(x){ return samePupil(x, kl, par); });
+      if(full.length){ hideTwin(); toast("Такой ученик уже есть: " + pupilLine(full[0])); return; }
+      if(twins.length){ askTwin(nm, kl, par, twins); return; }
+      doAdd(nm);
+    });
+    function doAdd(nm){
+      hideTwin();
       var ind = fFmt.value === "индивидуально";
       var pupil = {
         "ученик":nm, "класс":fKl.value.trim(), "родитель":fPar.value.trim(),
@@ -1916,8 +2022,9 @@
       bg(addRemote("Ученики", pupil).then(function(){
         return addRemote("Направления", dir);
       }), "Ученик добавлен");
-    });
+    }
     p.appendChild(form);
+    p.appendChild(twinBox);
     p.appendChild(el("p","col-hint",
       "С даты старта ученик автоматически считается учащимся. Перерыв, окончание, " +
       "дискорд, источник и заметку можно дописать в карточке."));
@@ -2355,12 +2462,8 @@
         /* у каждой правки свой номер: ответ на старую не перебьёт свежую жалобу */
         var my = ++seq;
         if(!nm){ setStat("без имени не сохраню", "bad"); return; }
-        var dup = DATA["Ученики"].some(function(x){
-          return String(x.id) !== String(r.id) &&
-                 String(x["ученик"] || "").trim().toLowerCase() === nm.toLowerCase();
-        });
-        /* тёзки ломают оплаты: они привязаны к имени, а не к строке */
-        if(dup){ setStat("такое имя уже есть", "bad"); return; }
+        /* одинаковые имена смешали бы оплаты: они привязаны к имени, а не к строке */
+        if(nameTaken(nm, r.id)){ setStat("такое имя уже есть — допиши уточнение", "bad"); return; }
         var was = r["ученик"], moves = was !== nm ? dirsOf(was) : [];
         localPatch("Ученики", r.id, patch);
         moves.forEach(function(x){ localPatch("Направления", x.id, {"ученик":nm}); });
