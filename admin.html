@@ -279,7 +279,6 @@
   var closedOnly = false;
   var dragId = null;
   var pupilOpen = null;
-  var pupilEdit = false;
   var payEdit = null;
   /* фильтр периода на вкладке «Оплаты»: all | month | range | nodate */
   var payF = {mode:"all", month:"", from:"", to:""};
@@ -481,7 +480,7 @@
       var n = countFor(t.id);
       if(n !== null){ var s = el("span","n", n); b.appendChild(s); }
       b.setAttribute("aria-selected", tab === t.id ? "true" : "false");
-      b.addEventListener("click", function(){ tab = t.id; pupilOpen = null; pupilEdit = false; payEdit = null; dirEdit = null; dirAdd = false; groupOpen = null; render(); });
+      b.addEventListener("click", function(){ tab = t.id; pupilOpen = null; payEdit = null; dirEdit = null; dirAdd = false; groupOpen = null; render(); });
       nav.appendChild(b);
     });
     var rb = el("button","tab","Обновить");
@@ -1483,8 +1482,9 @@
     if(cur && out.indexOf(cur) < 0) out.push(cur);
     return out;
   }
-  function mkSource(cur){
+  function mkSource(cur, onChange){
     var box = el("div","src");
+    function fire(){ if(onChange) onChange(); }
     var sel = mkSel(srcList(cur), cur || "");
     var add = el("button","src-b","+");
     add.type = "button"; add.title = "добавить свой источник";
@@ -1504,7 +1504,7 @@
       del.hidden = !v || PUPIL_SRC.indexOf(v) >= 0;
       armed = false; del.textContent = "✕";
     }
-    sel.addEventListener("change", function(){ say(""); syncDel(); });
+    sel.addEventListener("change", function(){ say(""); syncDel(); fire(); });
 
     add.addEventListener("click", function(){
       if(editing) return;
@@ -1526,7 +1526,7 @@
           sel.appendChild(o);
         }
         sel.value = v;
-        close(); syncDel();
+        close(); syncDel(); fire();
         say("Появится в списке у всех, как только карточка сохранится.");
       });
       no.addEventListener("click", close);
@@ -1554,7 +1554,7 @@
       who.forEach(function(p){ localPatch("Ученики", p.id, {"источник":""}); });
       Array.from(sel.options).forEach(function(o){ if(o.value === v) sel.removeChild(o); });
       sel.value = "";
-      syncDel();
+      syncDel(); fire();
       say(who.length ? "Убрал у " + who.length + "." : "Убрал.");
       if(who.length){
         bg(who.reduce(function(chain, p){
@@ -1948,7 +1948,7 @@
     rows.forEach(function(row){
       var tr = document.createElement("tr");
       tr.className = "clickable" + (String(pupilOpen) === String(row.id) ? " sel" : "");
-      tr.addEventListener("click", function(){ pupilOpen = row.id; pupilEdit = false; payEdit = null; dirEdit = null; dirAdd = false; groupOpen = null; render(); });
+      tr.addEventListener("click", function(){ pupilOpen = row.id; payEdit = null; dirEdit = null; dirAdd = false; groupOpen = null; render(); });
       var nm = el("td");
       nm.appendChild(el("strong", null, row["ученик"]));
       var stt = pupilState(row);
@@ -2003,7 +2003,7 @@
     /* в карточке могла остаться правка, которая ждала своей секунды */
     if(flushSave){ var fs = flushSave; flushSave = null; fs(); }
     if(!pupilOpen && !groupOpen) return;
-    pupilOpen = null; pupilEdit = false; payEdit = null; dirEdit = null; dirAdd = false; groupOpen = null; render();
+    pupilOpen = null; payEdit = null; dirEdit = null; dirAdd = false; groupOpen = null; render();
   }
 
   /* Поля одного направления: предмет, формат и цена того формата. */
@@ -2159,6 +2159,8 @@
     var d = el("aside","drawer");
     var hd = el("div","dhead");
     hd.appendChild(el("div","t","Карточка ученика"));
+    var status = el("span","dstat","");
+    hd.appendChild(status);
     var x = el("button","dx","Закрыть ✕");
     x.addEventListener("click", closeDrawer);
     hd.appendChild(x);
@@ -2181,47 +2183,26 @@
 
     var tags = el("div","card-tags");
     tags.style.margin = "0 0 16px";
-    priceText(r).forEach(function(x){ tags.appendChild(el("span","pill", x)); });
-    tags.appendChild(el("span", sum ? "pill" : "pill pill-warn",
-      sum ? "оплачено " + sum : "нет оплат"));
-    var stt = pupilState(r);
-    tags.appendChild(el("span", stateClass(stt.k), stt.text));
+    function drawTags(){
+      tags.innerHTML = "";
+      priceText(r).forEach(function(x){ tags.appendChild(el("span","pill", x)); });
+      var paid = paidBy(r["ученик"]);
+      tags.appendChild(el("span", paid ? "pill" : "pill pill-warn",
+        paid ? "оплачено " + paid : "нет оплат"));
+      var stt = pupilState(r);
+      tags.appendChild(el("span", stateClass(stt.k), stt.text));
+    }
+    drawTags();
     b.appendChild(tags);
 
-    if(!pupilEdit){
-      var view = el("div","kv");
-      [["Класс", r["класс"]], ["Родитель", r["родитель"]],
-       ["Источник", r["источник"]],
-       ["Старт", r["старт"]], ["Окончание", r["окончание"]]]
-        .concat(CONTACTS.filter(function(c){ return ctValue(r, c.k); })
-                        .map(function(c){ return [c.name, ctValue(r, c.k)]; }))
-        .forEach(function(pair){
-          var cell = el("div");
-          cell.appendChild(el("div","k", pair[0]));
-          var val = String(pair[1] === undefined || pair[1] === null ? "" : pair[1]).trim();
-          cell.appendChild(el("div", val ? "v" : "v dim", val || "не указано"));
-          view.appendChild(cell);
-        });
-      b.appendChild(view);
-
-      var nb = el("div","kv kv-note");
-      var ncell = el("div");
-      ncell.appendChild(el("div","k","Заметка"));
-      var nv = String(r["заметка"] || "").trim();
-      ncell.appendChild(el("div", nv ? "v" : "v dim", nv || "пусто"));
-      nb.appendChild(ncell);
-      b.appendChild(nb);
-
-      var edit = el("button","btn","Редактировать карточку");
-      edit.style.marginTop = "18px";
-      edit.addEventListener("click", function(){ pupilEdit = true; render(); });
-      b.appendChild(edit);
-    } else {
+    /* Карточка сразу открыта на правку: отдельного режима просмотра больше нет.
+       Поля и есть просмотр, а всё введённое сохраняется само. */
+    {
       var f = {};
       f["ученик"]    = mkInp("text", "", r["ученик"]);
       f["класс"]     = mkSel([""].concat(PUPIL_KL), r["класс"]);
       f["родитель"]  = mkInp("text", "", r["родитель"]);
-      f["источник"]  = mkSource(r["источник"]);
+      f["источник"]  = mkSource(r["источник"], function(){ saveNow(); });
       f["старт"]     = mkInp("date", "", r["старт"]);
       f["окончание"] = mkInp("date", "", r["окончание"]);
       var form2 = el("div","form");
@@ -2239,6 +2220,7 @@
          На экране только то, что заполнено. Остальное прячется за «+»:
          у кого-то есть только телеграм родителя, у кого-то дискорд и телефон. */
       var CT = {};
+      var ctSave = null;          /* появится ниже, когда заведём автосохранение */
       CONTACTS.forEach(function(c){
         var v = ctValue(r, c.k);
         if(v) CT[c.k] = v;
@@ -2268,12 +2250,19 @@
           var row = el("div","ct-row");
           row.appendChild(el("span","ct-name", c.name));
           var i = mkInp("text", c.ph, CT[c.k]);
-          i.addEventListener("input", function(){ CT[c.k] = i.value; });
+          i.addEventListener("input", function(){
+            CT[c.k] = i.value;
+            if(ctSave) ctSave();
+          });
           row.appendChild(i);
           var x = el("button","ct-x","✕");
           x.type = "button";
           x.title = "убрать";
-          x.addEventListener("click", function(){ delete CT[c.k]; drawCts(); });
+          x.addEventListener("click", function(){
+            delete CT[c.k];
+            drawCts();
+            if(ctSave) ctSave();
+          });
           row.appendChild(x);
           ctWrap.appendChild(row);
         });
@@ -2298,13 +2287,29 @@
       nl.appendChild(note);
       b.appendChild(nl);
 
-      var acts = el("div","row-actions");
-      acts.style.marginTop = "14px";
-      var save = el("button","btn","Сохранить");
-      var cancel = el("button","btn btn-ghost","Отмена");
-      save.addEventListener("click", function(){
+      /* ——— карточка сохраняется сама ———
+         Кнопки «Сохранить» нет: её легко забыть, а правка одного поля дешёвая.
+         Списки, даты и контакты уходят сразу, имя — когда поле отпустили:
+         переименование тащит за собой направления, на каждой букве это ни к чему.
+         Список слева перерисуется при закрытии, иначе карточка пересоберётся
+         под руками и поле потеряет фокус. */
+      var okTimer = null, sendTimer = null, seq = 0;
+      function setStat(t, cls){
+        status.textContent = t || "";
+        status.className = "dstat" + (cls ? " " + cls : "");
+      }
+      function repaintHead(){
+        h.textContent = r["ученик"];
+        meta.textContent = [r["класс"] ? r["класс"] + " класс" : ""]
+          .concat(dirsOf(r["ученик"]).map(function(x){
+            return x["предмет"] + " " + x["формат"] + (x["группа"] ? " " + x["группа"] : "");
+          }))
+          .filter(Boolean).join(" · ");
+        drawTags();
+      }
+      function saveNow(){
+        clearTimeout(sendTimer);
         var nm = f["ученик"].value.trim();
-        if(!nm){ toast("Имя не может быть пустым"); return; }
         var patch = {};
         Object.keys(f).forEach(function(k){ patch[k] = f[k].value; });
         patch["ученик"] = nm;
@@ -2314,23 +2319,59 @@
           patch[c.k] = CT[c.k] === undefined ? "" : String(CT[c.k]).trim();
         });
         patch["статус"] = pupilState(patch).k;
-        var was = r["ученик"], renamed = was !== nm;
-        var moves = renamed ? dirsOf(was) : [];
+        var same = Object.keys(patch).every(function(k){
+          return String(r[k] === undefined ? "" : r[k]) === String(patch[k]);
+        });
+        if(same) return;
+        /* у каждой правки свой номер: ответ на старую не перебьёт свежую жалобу */
+        var my = ++seq;
+        if(!nm){ setStat("без имени не сохраню", "bad"); return; }
+        var dup = DATA["Ученики"].some(function(x){
+          return String(x.id) !== String(r.id) &&
+                 String(x["ученик"] || "").trim().toLowerCase() === nm.toLowerCase();
+        });
+        /* тёзки ломают оплаты: они привязаны к имени, а не к строке */
+        if(dup){ setStat("такое имя уже есть", "bad"); return; }
+        var was = r["ученик"], moves = was !== nm ? dirsOf(was) : [];
         localPatch("Ученики", r.id, patch);
         moves.forEach(function(x){ localPatch("Направления", x.id, {"ученик":nm}); });
-        pupilEdit = false;
-        render();
+        repaintHead();
+        setStat("сохраняю…");
         /* при переименовании тянем за собой направления — они привязаны по имени */
-        bg(send("update","Ученики",{id:r.id, row:patch}).then(function(){
+        send("update","Ученики",{id:r.id, row:patch}).then(function(){
           return moves.reduce(function(chain, x){
             return chain.then(function(){
               return send("update","Направления",{id:x.id, row:{"ученик":nm}});
             });
           }, Promise.resolve());
-        }), "Сохранено");
+        }).then(function(){
+          if(my !== seq) return;
+          setStat("сохранено", "ok");
+          clearTimeout(okTimer);
+          okTimer = setTimeout(function(){ if(my === seq) setStat(""); }, 2500);
+        }).catch(function(e){
+          if(keyDied(e)) return;
+          if(my !== seq) return;
+          setStat("не сохранилось: " + e.message, "bad");
+        });
+      }
+      function saveSoon(){ clearTimeout(sendTimer); sendTimer = setTimeout(saveNow, 600); }
+      flushSave = saveNow;
+      Object.keys(f).forEach(function(k){
+        if(k === "источник") return;          /* у него свой колбэк */
+        f[k].addEventListener("change", saveNow);
+        if(k === "ученик") f[k].addEventListener("blur", saveNow);
+        else if(f[k].tagName === "INPUT") f[k].addEventListener("input", saveSoon);
       });
-      cancel.addEventListener("click", function(){ pupilEdit = false; render(); });
-      acts.appendChild(save); acts.appendChild(cancel);
+      note.addEventListener("change", saveNow);
+      note.addEventListener("input", saveSoon);
+      ctSave = saveSoon;
+
+      var acts = el("div","row-actions");
+      acts.style.marginTop = "14px";
+      var close2 = el("button","btn btn-ghost","Закрыть");
+      close2.addEventListener("click", closeDrawer);
+      acts.appendChild(close2);
       /* Удаление ученика: два нажатия, вместе с ним уходят его направления.
          Оплаты остаются — это история, её стирать нельзя. */
       var drop = el("button","link","Удалить ученика");
@@ -2346,7 +2387,7 @@
         var paid = paidBy(r["ученик"]);
         localDrop("Ученики", r.id);
         mineDirs.forEach(function(x){ localDrop("Направления", x.id); });
-        pupilOpen = null; pupilEdit = false; dirEdit = null; dirAdd = false;
+        pupilOpen = null; dirEdit = null; dirAdd = false;
         render();
         bg(send("delete","Ученики",{id:r.id}).then(function(){
           return mineDirs.reduce(function(chain, x){
