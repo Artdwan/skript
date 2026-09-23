@@ -202,6 +202,8 @@
   .seg button{font:500 12.5px/1 var(--sans);padding:8px 12px;border:0;background:var(--card);color:var(--ink);cursor:pointer}
   .seg button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
   .bar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+  .range{display:inline-flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12.5px}
+  .range input{width:auto;min-width:0;flex:0 0 auto;padding:7px 9px;font-size:13.5px}
 
   .form{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));align-items:end}
   .form label{display:grid;gap:4px;font-size:12.5px;color:var(--muted)}
@@ -279,6 +281,8 @@
   var pupilOpen = null;
   var pupilEdit = false;
   var payEdit = null;
+  /* фильтр периода на вкладке «Оплаты»: all | month | range | nodate */
+  var payF = {mode:"all", month:"", from:"", to:""};
   var groupOpen = null;
   var dirEdit = null;
   var dirAdd = false;
@@ -310,6 +314,14 @@
     var d = new Date(iso);
     if(isNaN(d)) return iso;
     return d.toLocaleDateString("ru-RU", {weekday:"short", day:"numeric", month:"long", timeZone:TZ});
+  }
+  /* без дня недели: для границ периода он только мешает читать */
+  function fmtShort(iso){
+    if(!iso) return "";
+    var d = new Date(iso);
+    if(isNaN(d)) return iso;
+    return d.toLocaleDateString("ru-RU", {day:"numeric", month:"long", year:"numeric", timeZone:TZ})
+            .replace(" г.", "");
   }
 
   /* ——— обмен с посредником ——— */
@@ -2533,6 +2545,13 @@
   function money(n){
     return String(Math.round(n * 100) / 100);
   }
+  /* 1 оплата, 2 оплаты, 5 оплат, 21 оплата */
+  function plural(n, one, few, many){
+    var m10 = n % 10, m100 = n % 100;
+    if(m10 === 1 && m100 !== 11) return one;
+    if(m10 >= 2 && m10 <= 4 && (m100 < 10 || m100 >= 20)) return few;
+    return many;
+  }
   function monthName(ym){
     var names = ["январь","февраль","март","апрель","май","июнь",
                  "июль","август","сентябрь","октябрь","ноябрь","декабрь"];
@@ -2544,6 +2563,99 @@
     var i = parseInt(String(ym).slice(5, 7), 10);
     return monthName((i === 12 ? (y + 1) : y) + "-" + (i === 12 ? "01" : String(i + 1)));
   }
+  /* ——— фильтр периода ———
+     Месяцы берём из самих оплат, а не из календаря: пустых кнопок не будет.
+     Оплаты без даты в месяц и в период не попадают никогда — для них
+     отдельная кнопка, иначе они молча теряются. */
+  function payMonths(){
+    var seen = {}, out = [];
+    DATA["Оплаты"].forEach(function(o){
+      var d = String(o["дата"] || "").trim();
+      if(d.length < 7) return;
+      if(!seen[d.slice(0, 7)]){ seen[d.slice(0, 7)] = true; out.push(d.slice(0, 7)); }
+    });
+    out.sort();
+    out.reverse();
+    return out;
+  }
+  function payNoDate(){
+    return DATA["Оплаты"].filter(function(o){
+      return !String(o["дата"] || "").trim();
+    }).length;
+  }
+  function payMatch(o){
+    var d = String(o["дата"] || "").trim();
+    if(payF.mode === "nodate") return !d;
+    if(payF.mode === "month")  return d.slice(0, 7) === payF.month;
+    if(payF.mode === "range"){
+      if(!d) return false;
+      if(payF.from && d < payF.from) return false;
+      if(payF.to   && d > payF.to)   return false;
+      return true;
+    }
+    return true;
+  }
+  function payMonthLabel(ym){
+    return monthName(ym) + " " + String(ym).slice(0, 4);
+  }
+  function payWhat(){
+    if(payF.mode === "month")  return payMonthLabel(payF.month);
+    if(payF.mode === "nodate") return "без даты";
+    if(payF.mode === "range"){
+      return "с " + (payF.from ? fmtShort(payF.from) : "начала") +
+             " по " + (payF.to ? fmtShort(payF.to) : "сегодня");
+    }
+    return "за всё время";
+  }
+
+  function payBar(){
+    var bar = el("div","bar");
+    var seg = el("div","seg");
+    function chip(label, on, fn){
+      var b = el("button", null, label);
+      b.setAttribute("aria-pressed", on ? "true" : "false");
+      b.addEventListener("click", fn);
+      seg.appendChild(b);
+    }
+    chip("все", payF.mode === "all", function(){ payF.mode = "all"; render(); });
+    payMonths().slice(0, 6).forEach(function(m){
+      chip(payMonthLabel(m), payF.mode === "month" && payF.month === m, function(){
+        payF.mode = "month"; payF.month = m; render();
+      });
+    });
+    var nd = payNoDate();
+    if(nd) chip("без даты " + nd, payF.mode === "nodate", function(){
+      payF.mode = "nodate"; render();
+    });
+    bar.appendChild(seg);
+
+    var rng = el("div","range");
+    rng.appendChild(el("span","muted","период с"));
+    var f = mkInp("date", "", payF.from);
+    var t = mkInp("date", "", payF.to);
+    f.title = "с какой даты"; t.title = "по какую дату";
+    function pick(){
+      payF.from = f.value; payF.to = t.value;
+      payF.mode = (payF.from || payF.to) ? "range" : "all";
+      render();
+    }
+    f.addEventListener("change", pick);
+    t.addEventListener("change", pick);
+    rng.appendChild(f);
+    rng.appendChild(el("span","muted","по"));
+    rng.appendChild(t);
+    if(payF.mode !== "all"){
+      var off = el("button","btn btn-ghost btn-sm","сбросить");
+      off.addEventListener("click", function(){
+        payF = {mode:"all", month:"", from:"", to:""};
+        render();
+      });
+      rng.appendChild(off);
+    }
+    bar.appendChild(rng);
+    return bar;
+  }
+
   function statTile(label, value, note){
     var s = el("div","stat");
     s.appendChild(el("div","stat-k", label));
@@ -2593,8 +2705,27 @@
 
     var t = el("div","panel");
     t.appendChild(el("h3", null, "Оплаты"));
-    var rows = DATA["Оплаты"].slice().reverse();
-    if(!rows.length){ t.appendChild(el("p","empty","Пока пусто.")); w.appendChild(t); return; }
+    if(!DATA["Оплаты"].length){
+      t.appendChild(el("p","empty","Пока пусто."));
+      w.appendChild(t);
+      return;
+    }
+    t.appendChild(payBar());
+    var rows = DATA["Оплаты"].filter(payMatch).reverse();
+    var sum = 0;
+    rows.forEach(function(o){
+      sum += parseFloat(String(o["сумма"] || "").replace(",", ".")) || 0;
+    });
+    var info = el("p","col-hint");
+    info.style.marginTop = "0";
+    info.textContent = payWhat() + ": " + rows.length + " " +
+      plural(rows.length, "оплата", "оплаты", "оплат") + " на " + money(sum);
+    t.appendChild(info);
+    if(!rows.length){
+      t.appendChild(el("p","empty","В этом периоде оплат нет."));
+      w.appendChild(t);
+      return;
+    }
     t.appendChild(payTable(rows, true));
     t.appendChild(el("p","col-hint",
       "«Правка» открывает строку: можно поменять дату, сумму и чек или удалить оплату."));
