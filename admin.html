@@ -325,9 +325,13 @@
 
   /* ——— обмен с посредником ——— */
 
+  /* Перечитка ждёт записи, которые уже в пути: иначе таблица вернулась бы
+     без последних правок и затёрла их на экране. */
   function load(){
     if(!key) return Promise.resolve(false);
-    return fetch(HOOK + "?action=data&k=" + encodeURIComponent(key))
+    return queue.catch(function(){}).then(function(){
+      return fetch(HOOK + "?action=data&k=" + encodeURIComponent(key));
+    })
       .then(function(r){ return r.json(); })
       .then(function(d){
         if(!d.ok) throw new Error(d.error || "не приняло ключ");
@@ -349,6 +353,9 @@
       }).then(function(r){ return r.json(); })
         .then(function(res){
           if(!res.ok) throw new Error(res.error || "не записалось");
+          /* шлюз не нашёл строку — правка никуда не легла, молчать нельзя */
+          if(op === "update" && res.found === false)
+            throw new Error("строки нет в таблице, перечитываю");
           return res;
         });
     }
@@ -391,14 +398,43 @@
   function copyOf(o){
     var c = {}; Object.keys(o).forEach(function(k){ c[k] = o[k]; }); return c;
   }
+  /* Номер строки придумывает сама страница и отправляет его в шлюз —
+     шлюз его и записывает. Поэтому новую строку можно сразу править и
+     удалять: правка уйдёт следом в той же очереди и найдёт строку.
+     Буква впереди — чтобы таблица не превратила номер в число. */
+  var idSeq = 0;
+  function newRowId(){
+    idSeq = (idSeq + 1) % 900;
+    return "c" + Date.now().toString(36) + (100 + idSeq) +
+           Math.floor(Math.random() * 1296).toString(36);
+  }
+  /* row — то, что уйдёт в шлюз: в него же вписывается номер */
   function localAdd(sheet, row){
-    row.id = "tmp" + Date.now();
-    row.__tmp = true;
-    DATA[sheet].push(row);
-    return row;
+    if(!row.id) row.id = newRowId();
+    var c = copyOf(row);
+    DATA[sheet].push(c);
+    return c;
+  }
+  /* Запись новой строки. Таблицу после неё не перечитываем:
+     всё уже на экране, а перечитка пересобрала бы открытую карточку. */
+  function addRemote(sheet, row){
+    return send("add", sheet, {row: row}).then(function(res){
+      if(res && res.id && String(res.id) !== String(row.id)){
+        /* шлюз старой версии выдал свой номер — подтягиваем таблицу целиком */
+        return load().then(softRender);
+      }
+      return res;
+    });
+  }
+  /* Перерисовка, которая не трогает открытую карточку: пока карточка открыта,
+     экран обновится при её закрытии. Иначе поле теряет фокус под руками. */
+  var renderLater = false;
+  function softRender(){
+    if(pupilOpen || groupOpen){ renderLater = true; return; }
+    render();
   }
   function afterWrite(msg){
-    return load().then(function(){ render(); toast(msg); })
+    return load().then(function(){ softRender(); toast(msg); })
                  .catch(function(e){ toast("Ошибка: " + e.message); });
   }
 
@@ -465,6 +501,10 @@
   ];
 
   function render(){
+    /* в открытой карточке могла остаться правка, ждавшая своей полсекунды:
+       отправляем её до того, как поля исчезнут с экрана */
+    if(flushSave){ var fs0 = flushSave; flushSave = null; fs0(); }
+    renderLater = false;
     app.innerHTML = "";
     var w = el("div","wrap");
 
@@ -825,12 +865,11 @@
       if(!what.value.trim()) return;
       var row = {"создана":today(), "что":what.value.trim(), "кого":who.value.trim(),
                  "срок":due.value, "кто":"Артур", "сделано":"нет", "исполнитель":exec.value};
-      localAdd("Задачи", copyOf(row));
+      localAdd("Задачи", row);
       what.value = ""; who.value = "";
       render();
-      bg(send("add","Задачи",{row:row}).then(function(){
-        return load().then(render);
-      }), exec.value === "Настя" ? "Задача ушла Насте" : "Задача добавлена");
+      bg(addRemote("Задачи", row),
+         row["исполнитель"] === "Настя" ? "Задача ушла Насте" : "Задача добавлена");
     });
     form.appendChild(l1); form.appendChild(l2); form.appendChild(l4);
     form.appendChild(l3); form.appendChild(add);
@@ -1014,12 +1053,10 @@
       var row = {"название":nm, "предмет":gSubj.value, "класс":gKl.value,
                  "формат":gFmt.value, "дни":gDays.value, "мест":gSeats.value,
                  "минуты":gMins.value, "преподаватель":gTeach.value.trim(), "заметка":""};
-      localAdd("Группы", copyOf(row));
+      localAdd("Группы", row);
       gName.value = ""; gKl.value = ""; gTeach.value = "";
       render();
-      bg(send("add","Группы",{row:row}).then(function(){
-        return load().then(render);
-      }), "Группа добавлена");
+      bg(addRemote("Группы", row), "Группа добавлена");
     });
     np.appendChild(gf);
     np.appendChild(el("p","col-hint",
@@ -1074,14 +1111,11 @@
           var ab = String(g["абонемент"] || "").trim();
           line.appendChild(el("span", ab ? "pill" : "pill pill-warn",
                               ab ? ab + " в месяц" : "цена не задана"));
-          if(g.__tmp) line.appendChild(el("span","muted","пишу…"));
-          if(!g.__tmp){
-            r.className = "grow clickable";
-            r.addEventListener("click", function(){
-              groupOpen = g.id; pupilOpen = null; render();
-            });
-            if(String(groupOpen) === String(g.id)) r.classList.add("sel");
-          }
+          r.className = "grow clickable";
+          r.addEventListener("click", function(){
+            groupOpen = g.id; pupilOpen = null; render();
+          });
+          if(String(groupOpen) === String(g.id)) r.classList.add("sel");
           r.appendChild(line);
           var days = el("div","muted",
                         [daysText(g["дни"], g["минуты"]), g["преподаватель"]]
@@ -1241,6 +1275,7 @@
     }
     function saveNow(){
       clearTimeout(sendTimer);
+      g = DATA["Группы"].filter(function(x){ return String(x.id) === String(g.id); })[0] || g;
       var nm = f["название"].value.trim();
       var patch = {};
       Object.keys(f).forEach(function(k){ patch[k] = f[k].value; });
@@ -1873,15 +1908,13 @@
         "цена_занятия":ind ? fPr.value : "", "минуты":ind ? fMin.value : "", "заметка":""
       };
       /* строка появляется сразу — и второй клик уже упрётся в проверку на тёзку */
-      localAdd("Ученики", copyOf(pupil));
-      localAdd("Направления", copyOf(dir));
+      localAdd("Ученики", pupil);
+      localAdd("Направления", dir);
       fName.value = ""; fKl.value = ""; fAb.value = ""; fPar.value = "";
       fPr.value = ""; fMin.value = ""; fSt.value = today();
       render();
-      bg(send("add","Ученики",{row:pupil}).then(function(){
-        return send("add","Направления",{row:dir});
-      }).then(function(){
-        return load().then(render);
+      bg(addRemote("Ученики", pupil).then(function(){
+        return addRemote("Направления", dir);
       }), "Ученик добавлен");
     });
     p.appendChild(form);
@@ -2101,13 +2134,9 @@
         line.appendChild(el("span", pr ? "pill" : "pill pill-warn", pr || "цена не указана"));
         if(!isInd(d) && dirOwnPrice(d) && groupByName(d["группа"]))
           line.appendChild(el("span","muted","своя цена"));
-        if(d.__tmp){
-          line.appendChild(el("span","muted","пишу…"));
-        } else {
-          var ed = el("button","link","правка");
-          ed.addEventListener("click", function(){ dirEdit = d.id; dirAdd = false; render(); });
-          line.appendChild(ed);
-        }
+        var ed = el("button","link","правка");
+        ed.addEventListener("click", function(){ dirEdit = d.id; dirAdd = false; render(); });
+        line.appendChild(ed);
         box.appendChild(line);
       }
       s.appendChild(box);
@@ -2125,11 +2154,9 @@
                  String(x["формат"]  || "").trim() === row["формат"];
         });
         if(same){ toast("Такое направление уже есть"); return; }
-        localAdd("Направления", copyOf(row));
+        localAdd("Направления", row);
         dirAdd = false; render();
-        bg(send("add","Направления",{row:row}).then(function(){
-          return load().then(render);
-        }), "Предмет добавлен");
+        bg(addRemote("Направления", row), "Предмет добавлен");
       });
       var nno = el("button","btn btn-ghost btn-sm","Отмена");
       nno.addEventListener("click", function(){ dirAdd = false; render(); });
@@ -2309,6 +2336,8 @@
       }
       function saveNow(){
         clearTimeout(sendTimer);
+        /* если таблицу успели перечитать, берём свежую строку, а не ту, что была при открытии */
+        r = pupilById(r.id) || r;
         var nm = f["ученик"].value.trim();
         var patch = {};
         Object.keys(f).forEach(function(k){ patch[k] = f[k].value; });
@@ -2459,12 +2488,9 @@
       if(!amt.value){ toast("Сумма пустая"); return; }
       var row = {"дата":pday.value || today(), "ученик":r["ученик"],
                  "сумма":amt.value, "чек":chek.value, "заметка":discOf().note};
-      var copy = {}; Object.keys(row).forEach(function(k){ copy[k] = row[k]; });
-      localAdd("Оплаты", copy);
+      localAdd("Оплаты", row);
       render();
-      bg(send("add","Оплаты",{row:row}).then(function(){
-        return load().then(render);
-      }), "Оплата записана");
+      bg(addRemote("Оплаты", row), "Оплата записана");
     });
     ps.appendChild(pf);
     ps.appendChild(calc);
@@ -2539,13 +2565,9 @@
         tr.appendChild(el("td", null, row["сумма"]));
         tr.appendChild(mark(row["чек"]));
         var c5 = el("td");
-        if(row.__tmp){
-          c5.appendChild(el("span","muted","пишу…"));
-        } else {
-          var ed = el("button","link","правка");
-          ed.addEventListener("click", function(){ payEdit = row.id; render(); });
-          c5.appendChild(ed);
-        }
+        var ed = el("button","link","правка");
+        ed.addEventListener("click", function(){ payEdit = row.id; render(); });
+        c5.appendChild(ed);
         tr.appendChild(c5);
       }
       body.appendChild(tr);
@@ -2734,12 +2756,9 @@
       if(!who.value.trim()) return;
       var row = {"дата":day.value || today(), "ученик":who.value.trim(),
                  "сумма":sum.value, "чек":chek.value};
-      var copy = {}; Object.keys(row).forEach(function(k){ copy[k] = row[k]; });
-      localAdd("Оплаты", copy);
+      localAdd("Оплаты", row);
       render();
-      bg(send("add","Оплаты",{row:row}).then(function(){
-        return load().then(render);
-      }), "Оплата записана");
+      bg(addRemote("Оплаты", row), "Оплата записана");
     });
     p.appendChild(form);
     w.appendChild(p);
