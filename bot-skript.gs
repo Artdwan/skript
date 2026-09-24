@@ -27,7 +27,8 @@ var SHEETS = {
   'Оплаты':  ['id','дата','ученик','месяц','сумма','чек','заметка'],
   'Счета':   ['id','создан','ученик','предмет','формат','направление','период_с','период_по','период',
               'занятий','цена','полная','скидка','сумма','статус','оплата_id','отправлен','текст'],
-  'Задачи':  ['id','создана','что','кого','срок','кто','сделано','текст','исполнитель'],
+  'Задачи':  ['id','создана','что','кого','срок','кто','сделано','текст','исполнитель','проект','ключ'],
+  'Проекты': ['id','название','заметка'],
   'Контакты':['id','создан','ник','пробное','телеграм','вайбер','почта','ключ']
 };
 
@@ -356,9 +357,13 @@ function taskById(id) {
   return null;
 }
 
-/** Уведомление в телеграм о том, что стало с задачей. */
+/**
+ * Уведомление в телеграм о том, что стало с задачей.
+ * Только задачи Насти: остальное Артур видит в кабинете, телеграм им не засоряем.
+ */
 function taskNote(head, row, who) {
   if (!row) return;
+  if (String(row['исполнитель'] || '').trim().toLowerCase() !== 'настя') return;
   var lines = [head, row['что'] || ''];
   if (row['кого']) lines.push('Кого: ' + row['кого']);
   if (row['срок']) lines.push('Срок: ' + row['срок']);
@@ -743,4 +748,193 @@ function setTasksTopic() {
 function clearTasksTopic() {
   props().deleteProperty('TG_TASKS');
   Logger.log('TG_TASKS очищен, задачи снова идут вместе с пробными.');
+}
+
+/* ════════════════ Проект «Домашние задания» ════════════════
+ * После каждого проведённого занятия из календаря «(Артур) Основное расписание»
+ * в листе «Задачи» появляется задача выслать ДЗ, с группой или учеником из базы.
+ *
+ * Как занятие узнаётся:
+ *   1. по дню недели и времени начала - так оно записано у группы в колонке «дни»
+ *      (у индивидуальных - в направлении ученика);
+ *   2. если по времени не нашлось - по названию события («Группа Мат9 (2)» -> «Мат9 (2)»,
+ *      «Варвара Хим10 Индив» -> ученица Варвара);
+ *   3. не нашлось совсем - задача всё равно ставится, в «Кого» название события.
+ * «Свободно» и события на весь день пропускаются.
+ *
+ * Запуск: hwInstall() один раз из редактора ставит hwTick каждые 10 минут.
+ * hwCheck() ничего не пишет - только показывает в журнале, что было бы создано.
+ */
+
+var HW_CAL = 'c21b11fbb6772f6c2729e9c42722e8e8ce6a97f685dc28b5d4d4a4f0969e0075@group.calendar.google.com';
+var HW_PROJECT = 'Домашние задания';
+var HW_WHO = 'Артур';
+var HW_CODES = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
+
+function hwNorm(s) {
+  return String(s === null || s === undefined ? '' : s).toLowerCase()
+    .replace(/ё/g, 'е').replace(/^\s*группа\s+/, '').replace(/\s+/g, '');
+}
+
+/** «вт 18:15, чт 18:15» -> [{d:'вт', t:'18:15'}, ...] */
+function hwDays(s) {
+  var out = [];
+  String(s || '').split(/[,;]/).forEach(function (part) {
+    var m = String(part).trim().match(/^(пн|вт|ср|чт|пт|сб|вс)(?:\s+(\d{1,2})[:.](\d{2}))?$/i);
+    if (!m) return;
+    var t = m[2] ? ((m[2].length < 2 ? '0' : '') + m[2] + ':' + m[3]) : '';
+    out.push({ d: m[1].toLowerCase(), t: t });
+  });
+  return out;
+}
+
+function hwFree(title) { return /^\s*свободн/i.test(String(title || '')); }
+
+/**
+ * Кого касается занятие. ev - {title, start: Date}.
+ * Возвращает {kind: 'группа'|'ученик'|'', name, how}.
+ */
+function hwMatch(ev, groups, dirs) {
+  var wd = HW_CODES[Number(Utilities.formatDate(ev.start, 'Europe/Minsk', 'u')) % 7];
+  var hm = Utilities.formatDate(ev.start, 'Europe/Minsk', 'HH:mm');
+  var title = hwNorm(ev.title);
+  function atTime(days) {
+    return hwDays(days).some(function (x) { return x.d === wd && x.t === hm; });
+  }
+  function byTitle(list, key) {
+    var best = null, bestLen = 0;
+    list.forEach(function (x) {
+      var n = hwNorm(x[key]);
+      if (!n) return;
+      if ((title.indexOf(n) === 0 || n.indexOf(title) === 0) && n.length > bestLen) {
+        best = x; bestLen = n.length;
+      }
+    });
+    return best;
+  }
+  // 1. группа по времени; если в это время их несколько - уточняем названием
+  var g = groups.filter(function (x) { return atTime(x['дни']); });
+  if (g.length === 1) return { kind: 'группа', name: g[0]['название'], how: 'по времени' };
+  if (g.length > 1) {
+    var gg = byTitle(g, 'название');
+    if (gg) return { kind: 'группа', name: gg['название'], how: 'по времени и названию' };
+  }
+  // 2. индивидуальное или пара по дням направления
+  var d = dirs.filter(function (x) { return String(x['дни'] || '').trim() && atTime(x['дни']); });
+  if (d.length === 1) return { kind: 'ученик', name: d[0]['ученик'], how: 'по времени' };
+  // 3. по названию: сначала группы, потом ученики по имени в начале события
+  var gt = byTitle(groups, 'название');
+  if (gt) return { kind: 'группа', name: gt['название'], how: 'по названию' };
+  var raw = String(ev.title || '').toLowerCase().replace(/ё/g, 'е').trim();
+  var names = {};
+  dirs.forEach(function (x) { names[x['ученик']] = true; });
+  var who = Object.keys(names).filter(function (n) {
+    var b = String(n).toLowerCase().replace(/ё/g, 'е').replace(/\s*\([^)]*\)\s*$/, '').trim();
+    return b && (raw === b || raw.indexOf(b + ' ') === 0);
+  });
+  if (who.length === 1) return { kind: 'ученик', name: who[0], how: 'по имени' };
+  return { kind: '', name: String(ev.title || '').trim(), how: 'не нашёл' };
+}
+
+/** Прошедшие занятия в окне [from, to): закончились внутри окна, не «Свободно», не на весь день. */
+function hwLessons(from, to) {
+  var cal = CalendarApp.getCalendarById(HW_CAL);
+  if (!cal) throw new Error('нет доступа к календарю «Основное расписание»');
+  var list = cal.getEvents(new Date(from.getTime() - 6 * 3600 * 1000), to);
+  return list.filter(function (e) {
+    if (e.isAllDayEvent() || hwFree(e.getTitle())) return false;
+    var end = e.getEndTime().getTime();
+    return end > from.getTime() && end <= to.getTime();
+  }).map(function (e) {
+    return { key: e.getId() + '|' + e.getStartTime().getTime(), title: e.getTitle(),
+             start: e.getStartTime(), end: e.getEndTime() };
+  });
+}
+
+function hwRow(ev, m) {
+  var day = Utilities.formatDate(ev.start, 'Europe/Minsk', 'yyyy-MM-dd');
+  var when = Utilities.formatDate(ev.start, 'Europe/Minsk', 'dd.MM HH:mm') + '-' +
+             Utilities.formatDate(ev.end, 'Europe/Minsk', 'HH:mm');
+  return {
+    'создана': Utilities.formatDate(new Date(), 'Europe/Minsk', 'yyyy-MM-dd'),
+    'что': 'Выслать ДЗ после занятия ' + when,
+    'кого': m.name,
+    'срок': day,
+    'кто': 'календарь',
+    'сделано': 'нет',
+    'текст': 'В календаре: ' + String(ev.title || '').trim() +
+             (m.kind ? '' : '. Группу или ученика в базе не нашёл - проверь название или дни в кабинете.'),
+    'исполнитель': HW_WHO,
+    'проект': HW_PROJECT,
+    'ключ': ev.key
+  };
+}
+
+function hwEnsureProject() {
+  var has = readSheet('Проекты').some(function (p) {
+    return String(p['название']).trim() === HW_PROJECT;
+  });
+  if (!has) addRow('Проекты', { 'название': HW_PROJECT,
+    'заметка': 'задачи ставятся сами после каждого занятия из календаря' });
+}
+
+/** Основной запуск по таймеру. Окно - с прошлого запуска, не больше трёх суток. */
+function hwTick() {
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(20000)) return 'занято другим запуском';
+  try {
+    var now = new Date();
+    var last = Number(cfg('HW_LAST')) || (now.getTime() - 3 * 3600 * 1000);
+    var from = new Date(Math.max(last, now.getTime() - 3 * 24 * 3600 * 1000));
+    var lessons = hwLessons(from, now);
+    var made = 0;
+    if (lessons.length) {
+      hwEnsureProject();
+      var seen = {};
+      readSheet('Задачи').forEach(function (t) { if (t['ключ']) seen[t['ключ']] = true; });
+      var groups = readSheet('Группы'), dirs = readSheet('Направления');
+      lessons.forEach(function (ev) {
+        if (seen[ev.key]) return;
+        addRow('Задачи', hwRow(ev, hwMatch(ev, groups, dirs)));
+        seen[ev.key] = true;
+        made++;
+      });
+    }
+    props().setProperty('HW_LAST', String(now.getTime()));
+    return 'занятий: ' + lessons.length + ', новых задач: ' + made;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** Проверка без записи: что было бы создано за последние 7 дней. */
+function hwCheck() {
+  var now = new Date();
+  var lessons = hwLessons(new Date(now.getTime() - 7 * 24 * 3600 * 1000), now);
+  var groups = readSheet('Группы'), dirs = readSheet('Направления');
+  Logger.log('Календарь открылся. Прошедших занятий за 7 дней: ' + lessons.length);
+  lessons.forEach(function (ev) {
+    var m = hwMatch(ev, groups, dirs);
+    Logger.log(Utilities.formatDate(ev.start, 'Europe/Minsk', 'EEE dd.MM HH:mm') + '  «' + ev.title +
+               '»  ->  ' + (m.kind ? m.kind + ' ' + m.name : 'не нашёл') + '  (' + m.how + ')');
+  });
+}
+
+/** Один раз из редактора: ставит hwTick каждые 10 минут, старые копии убирает. */
+function hwInstall() {
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (t.getHandlerFunction() === 'hwTick') ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger('hwTick').timeBased().everyMinutes(10).create();
+  props().setProperty('HW_LAST', String(new Date().getTime()));
+  hwEnsureProject();
+  Logger.log('Готово: задачи на ДЗ будут появляться в течение 10 минут после конца занятия.');
+}
+
+/** Выключить автозадачи. */
+function hwStop() {
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (t.getHandlerFunction() === 'hwTick') ScriptApp.deleteTrigger(t);
+  });
+  Logger.log('Автозадачи на ДЗ выключены.');
 }
