@@ -3606,17 +3606,21 @@
   /* Каждый счёт — два сообщения: кому он, и следом текст для родителя.
      Шлюз отмечает «отправлен» каждому счёту отдельно, так что при сбое
      посередине ушедшие не уйдут второй раз. */
-  function tgBills(rows){
-    var day = today();
-    function mark(ids){
-      (ids || []).forEach(function(id){ localPatch("Счета", id, {"отправлен":day}); });
-      softRender();
-    }
-    return send("tg","Счета",{
+  function billItems(rows){
+    return {
       items: rows.map(function(b){ return {id:b.id, messages:[billHead(b), b["текст"]]}; }),
-      mark: {sheet:"Счета", field:"отправлен", value:day}
-    }).then(function(res){ mark(res && res.sent); }, function(e){
-      if(e && e.res) mark(e.res.sent);
+      mark: {sheet:"Счета", field:"отправлен", value:today()}
+    };
+  }
+  function markSent(ids){
+    var day = today();
+    (ids || []).forEach(function(id){ localPatch("Счета", id, {"отправлен":day}); });
+    softRender();
+  }
+  /* повторная отправка из списка: строки уже в таблице */
+  function tgBills(rows){
+    return send("tg","Счета", billItems(rows)).then(function(res){ markSent(res && res.sent); }, function(e){
+      if(e && e.res) markSent(e.res.sent);
       throw e;
     });
   }
@@ -3636,16 +3640,22 @@
     billView = "open";
     render();
     toast("Счета записываю и отправляю в телеграм…");
-    send("bulk","Счета",{rows:rows}).then(function(){
-      return tgBills(rows).then(function(){
-        toast("Выставлено " + rows.length + ", ушло в телеграм");
-      }, function(e){
-        if(keyDied(e)) return;
-        toast("Счета записаны, но в телеграм не ушли: " + e.message +
-              ". Отправь ещё раз из списка счетов.");
-      });
+    /* одним запросом: шлюз пишет строки, сразу шлёт в телеграм и отмечает ушедшие */
+    var pl = billItems(rows);
+    pl.rows = rows;
+    send("bills","Счета", pl).then(function(res){
+      markSent(res && res.sent);
+      toast("Выставлено " + rows.length + ", ушло в телеграм");
     }).catch(function(e){
       if(keyDied(e)) return;
+      if(e && e.res && e.res.added){
+        markSent(e.res.sent);
+        toast("Счета записаны, но в телеграм не ушли: " + e.message +
+              ". Отправь ещё раз из списка счетов.");
+        /* что успело уйти, шлюз отметил в таблице — перечитываем, чтобы не слать дважды */
+        load().then(render).catch(function(e2){ keyDied(e2); });
+        return;
+      }
       toast("Счета не записались: " + e.message);
       load().then(render).catch(function(e2){ keyDied(e2); });
     });
