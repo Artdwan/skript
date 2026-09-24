@@ -166,6 +166,10 @@
   .bill-text{font:400 14px/1.45 var(--sans)}
   .warn-t{color:var(--warn)}
   .bill-pick td:first-child{width:28px}
+  .proj-bar{gap:8px}
+  .proj-bar .src-row{display:inline-flex;gap:6px;align-items:center}
+  .proj-bar .src-row input{width:220px;padding:7px 9px}
+  .task-note{color:var(--muted);font-size:12.5px;margin-top:3px}
   .miss{font-size:13px;color:var(--muted);margin:-6px 0 16px;line-height:1.7}
   .miss .miss-k{color:var(--warn);font-weight:600;margin-right:4px}
   .miss .link{font-size:13px}
@@ -298,7 +302,7 @@
   try{ key = localStorage.getItem(KEY_STORE) || ""; }catch(e){ key = ""; }
 
   var DATA = {"Лиды":[], "Группы":[], "Ученики":[], "Направления":[], "Оплаты":[],
-              "Задачи":[], "Контакты":[], "Счета":[]};
+              "Задачи":[], "Контакты":[], "Счета":[], "Проекты":[]};
   var CAL = [];
   var tab = "today";
   var busy = false;
@@ -882,22 +886,28 @@
     p.appendChild(go);
     w.appendChild(p);
 
-    var t = el("div","panel");
+    var t = el("div","panel tasks-panel");
     t.appendChild(el("h3", null, "Задачи"));
+    t.appendChild(projBar());
     var form = el("div","form");
     var what = document.createElement("input"); what.type="text"; what.placeholder="что сделать";
-    var who  = document.createElement("input"); who.type="text";  who.placeholder="к кому относится";
+    var who  = document.createElement("input"); who.type="text";  who.placeholder="ученик, группа или @ник";
+    who.setAttribute("list", "who-list");
+    t.appendChild(whoDatalist("who-list"));
     var due  = document.createElement("input"); due.type="date";  due.value = today();
     var exec = mkSel(TASK_WHO, "Артур");
+    var proj = mkSel([""].concat(projList()), taskProj && taskProj !== "—" ? taskProj : "");
     var l1 = el("label"); l1.appendChild(el("span",null,"Задача")); l1.appendChild(what);
     var l2 = el("label"); l2.appendChild(el("span",null,"Кого касается")); l2.appendChild(who);
     var l3 = el("label"); l3.appendChild(el("span",null,"Срок")); l3.appendChild(due);
     var l4 = el("label"); l4.appendChild(el("span",null,"Исполнитель")); l4.appendChild(exec);
+    var l5 = el("label"); l5.appendChild(el("span",null,"Проект")); l5.appendChild(proj);
     var add = el("button","btn","Добавить");
     add.addEventListener("click", function(){
       if(!what.value.trim()) return;
       var row = {"создана":today(), "что":what.value.trim(), "кого":who.value.trim(),
-                 "срок":due.value, "кто":"Артур", "сделано":"нет", "исполнитель":exec.value};
+                 "срок":due.value, "кто":"Артур", "сделано":"нет", "исполнитель":exec.value,
+                 "проект":proj.value};
       localAdd("Задачи", row);
       what.value = ""; who.value = "";
       render();
@@ -905,18 +915,27 @@
          row["исполнитель"] === "Настя" ? "Задача ушла Насте" : "Задача добавлена");
     });
     form.appendChild(l1); form.appendChild(l2); form.appendChild(l4);
-    form.appendChild(l3); form.appendChild(add);
+    form.appendChild(l3); form.appendChild(l5); form.appendChild(add);
     t.appendChild(form);
 
-    var list = openTasks().sort(function(a,b){ return String(a["срок"]).localeCompare(String(b["срок"])); });
+    var list = openTasks().filter(function(x){
+      if(!taskProj) return true;
+      if(taskProj === "—") return !projOf(x);
+      return projOf(x) === taskProj;
+    }).sort(function(a,b){ return String(a["срок"]).localeCompare(String(b["срок"])); });
+    if(taskProj === HW_PROJECT)
+      t.appendChild(el("p","col-hint","Эти задачи ставит календарь «Основное расписание»: " +
+        "в течение 10 минут после конца занятия. Группа находится по дню и времени, " +
+        "а если занятие перенесли — по названию события."));
     if(!list.length){
-      var e = el("p","empty","Открытых задач нет.");
+      var e = el("p","empty", taskProj ? "В этом проекте открытых задач нет." : "Открытых задач нет.");
       e.style.marginTop = "14px";
       t.appendChild(e);
     } else {
       var tw = el("div","tbl-wrap"); tw.style.marginTop = "14px";
       var tb = document.createElement("table");
-      tb.appendChild(head(["Срок","Что","Кого","Исполнитель","",""]));
+      tb.appendChild(head(taskProj ? ["Срок","Что","Кого","Исполнитель","",""]
+                                   : ["Срок","Что","Кого","Исполнитель","Проект","",""]));
       var body = document.createElement("tbody");
       list.forEach(function(row){
         var tr = document.createElement("tr");
@@ -924,13 +943,17 @@
         var d = el("td");
         var pill = el("span", overdue ? "pill pill-warn" : "pill", row["срок"] || "без срока");
         d.appendChild(pill); tr.appendChild(d);
-        tr.appendChild(el("td", null, row["что"]));
+        var tdw = el("td", null, row["что"]);
+        if(String(row["текст"] || "").trim())
+          tdw.appendChild(el("div","task-note", String(row["текст"]).trim()));
+        tr.appendChild(tdw);
         tr.appendChild(el("td","muted", row["кого"]));
         var ex = el("td");
         var who2 = String(row["исполнитель"] || "").trim();
         ex.appendChild(el("span", who2 === "Настя" ? "pill pill-grape" : "pill",
                           who2 || "ничья"));
         tr.appendChild(ex);
+        if(!taskProj) tr.appendChild(el("td","muted", projOf(row) || "—"));
         var a = el("td");
         var done = el("button","link","готово");
         done.addEventListener("click", function(){
@@ -952,6 +975,92 @@
       tb.appendChild(body); tw.appendChild(tb); t.appendChild(tw);
     }
     w.appendChild(t);
+  }
+
+  /* ——— проекты над списком задач ———
+     Переключатель: все, без проекта, каждый проект. «+» заводит новый,
+     «✕» убирает выбранный: задачи остаются, у них просто стирается проект. */
+  function projBar(){
+    var bar = el("div","bar proj-bar");
+    var seg = el("div","seg");
+    var open = openTasks();
+    function chip(key, label){
+      var n = open.filter(function(x){
+        return key === "" ? true : (key === "—" ? !projOf(x) : projOf(x) === key);
+      }).length;
+      var b = el("button", null, label + (n ? " " + n : ""));
+      b.setAttribute("aria-pressed", taskProj === key ? "true" : "false");
+      b.addEventListener("click", function(){ taskProj = key; render(); });
+      seg.appendChild(b);
+    }
+    chip("", "все");
+    chip("—", "без проекта");
+    projList().forEach(function(n){ chip(n, n); });
+    bar.appendChild(seg);
+
+    var plus = el("button","src-b","+ проект");
+    plus.type = "button";
+    plus.addEventListener("click", function(){
+      var line = el("div","src-row");
+      var inp = mkInp("text", "название проекта");
+      var ok = el("button","src-b","ок"), no = el("button","src-b","отмена");
+      ok.type = "button"; no.type = "button";
+      line.appendChild(inp); line.appendChild(ok); line.appendChild(no);
+      bar.replaceChild(line, plus);
+      inp.focus();
+      function done(){ render(); }
+      ok.addEventListener("click", function(){
+        var v = inp.value.replace(/\s+/g, " ").trim();
+        if(!v){ done(); return; }
+        if(projList().some(function(x){ return x.toLowerCase() === v.toLowerCase(); })){
+          toast("Такой проект уже есть"); return;
+        }
+        var row = {"название":v, "заметка":""};
+        localAdd("Проекты", row);
+        taskProj = v;
+        render();
+        bg(addRemote("Проекты", row), "Проект заведён");
+      });
+      no.addEventListener("click", done);
+      inp.addEventListener("keydown", function(e){
+        if(e.key === "Enter"){ e.preventDefault(); ok.click(); }
+        if(e.key === "Escape"){ e.preventDefault(); done(); }
+      });
+    });
+    bar.appendChild(plus);
+
+    if(taskProj && taskProj !== "—" && taskProj !== HW_PROJECT){
+      var del = el("button","src-b","✕ убрать проект");
+      del.type = "button";
+      var armed = false;
+      del.addEventListener("click", function(){
+        var name = taskProj;
+        var tasks = DATA["Задачи"].filter(function(x){ return projOf(x) === name; });
+        if(!armed){
+          armed = true;
+          del.textContent = tasks.length
+            ? "точно? у " + tasks.length + " " + plural(tasks.length, "задачи", "задач", "задач") + " проект сотрётся"
+            : "точно убрать?";
+          return;
+        }
+        var rows = (DATA["Проекты"] || []).filter(function(p){
+          return String(p["название"] || "").trim() === name;
+        });
+        rows.forEach(function(p){ localDrop("Проекты", p.id); });
+        tasks.forEach(function(x){ localPatch("Задачи", x.id, {"проект":""}); });
+        taskProj = "";
+        render();
+        bg(rows.reduce(function(chain, p){
+          return chain.then(function(){ return send("delete","Проекты",{id:p.id}); });
+        }, Promise.resolve()).then(function(){
+          return tasks.reduce(function(chain, x){
+            return chain.then(function(){ return send("update","Задачи",{id:x.id, row:{"проект":""}}); });
+          }, Promise.resolve());
+        }), "Проект убран");
+      });
+      bar.appendChild(del);
+    }
+    return bar;
   }
 
   function head(cols){
@@ -1422,6 +1531,52 @@
   var DIR_SUBJ = ["математика", "химия"];
   /* Кто делает задачу. Пусто — ничья, видна обоим. */
   var TASK_WHO = ["Артур", "Настя"];
+  /* проект, задачи которого ставит календарь: его нельзя удалить из кабинета */
+  var HW_PROJECT = "Домашние задания";
+  var taskProj = "";            /* какой проект открыт на вкладке «Сегодня»: "" — все, "—" — без проекта */
+
+  /* Проекты: строки листа «Проекты» плюс то, что встречается в задачах —
+     чтобы задача с проектом, которого нет в листе, не потерялась. */
+  function projList(){
+    var out = [];
+    (DATA["Проекты"] || []).forEach(function(p){
+      var n = String(p["название"] || "").trim();
+      if(n && out.indexOf(n) < 0) out.push(n);
+    });
+    DATA["Задачи"].forEach(function(t){
+      var n = String(t["проект"] || "").trim();
+      if(n && out.indexOf(n) < 0) out.push(n);
+    });
+    /* «Домашние задания» есть всегда: его задачи ставит календарь */
+    if(out.indexOf(HW_PROJECT) < 0) out.unshift(HW_PROJECT);
+    return out;
+  }
+  function projOf(t){ return String(t["проект"] || "").trim(); }
+  /* Подсказки для «Кого касается»: ученики и группы из базы, ник лида — как раньше, руками. */
+  function whoOptions(){
+    var out = [];
+    DATA["Ученики"].forEach(function(r){
+      var n = String(r["ученик"] || "").trim();
+      if(!n || pupilState(r).k === "ушёл") return;
+      out.push({v:n, l:"ученик" + (r["класс"] ? ", " + r["класс"] + " класс" : "")});
+    });
+    DATA["Группы"].forEach(function(g){
+      var n = String(g["название"] || "").trim();
+      if(n) out.push({v:n, l:"группа"});
+    });
+    return out;
+  }
+  function whoDatalist(id){
+    var dl = document.createElement("datalist");
+    dl.id = id;
+    whoOptions().forEach(function(o){
+      var op = document.createElement("option");
+      op.value = o.v;
+      op.label = o.l;
+      dl.appendChild(op);
+    });
+    return dl;
+  }
   var DIR_FMT  = ["группа", "пара", "индивидуально"];
 
   function paidBy(name){
