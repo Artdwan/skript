@@ -23,8 +23,10 @@ var SHEETS = {
   'Лиды':    ['id','дата','ник','родитель','класс','предмет','цель','статус','предложили','пробное','след_шаг','след_дата','источник','заметка','этап','ход','обновлён','причина'],
   'Группы':  ['id','название','предмет','класс','формат','дни','преподаватель','заметка','абонемент','мест','минуты'],
   'Ученики': ['id','ученик','класс','предмет','формат','группа','абонемент','родитель','источник','старт','discord','holst','статус','заметка','перерыв_с','перерыв_по','окончание','инд_цена','инд_минуты','телеграм','телефон','инстаграм','род_телеграм','род_телефон','род_инстаграм'],
-  'Направления': ['id','ученик','предмет','формат','группа','абонемент','цена_занятия','минуты','заметка'],
+  'Направления': ['id','ученик','предмет','формат','группа','абонемент','цена_занятия','минуты','заметка','дни'],
   'Оплаты':  ['id','дата','ученик','месяц','сумма','чек','заметка'],
+  'Счета':   ['id','создан','ученик','предмет','формат','направление','период_с','период_по','период',
+              'занятий','цена','полная','скидка','сумма','статус','оплата_id','отправлен','текст'],
   'Задачи':  ['id','создана','что','кого','срок','кто','сделано','текст','исполнитель'],
   'Контакты':['id','создан','ник','пробное','телеграм','вайбер','почта','ключ']
 };
@@ -69,6 +71,53 @@ function tg(text) {
 function tgTasks(text) {
   var target = cfg('TG_TASKS');
   return target ? tgSend(target, text) : tg(text);
+}
+
+/** Одно сообщение с повтором: на «слишком часто» телеграм говорит, сколько ждать. */
+function tgSendRetry(target, text) {
+  var r = '';
+  for (var i = 0; i < 4; i++) {
+    r = tgSend(target, text);
+    var m = r.match(/"retry_after":(\d+)/);
+    if (!m) return r;
+    Utilities.sleep((Number(m[1]) + 1) * 1000);
+  }
+  return r;
+}
+
+/**
+ * Счета из кабинета. items - [{id, messages:[...]}]: у каждого счёта свои сообщения,
+ * они уходят всем адресатам TG_CHAT по порядку. Отметку mark {sheet, field, value}
+ * получает только тот счёт, чьи сообщения ушли все и всем - тогда повторная
+ * отправка из кабинета не задублирует уже ушедшие.
+ */
+function tgBatch(d) {
+  var chats = tgChats();
+  if (!cfg('TG_TOKEN') || !chats.length) {
+    return { ok: false, sent: [], error: 'в свойствах скрипта нет TG_TOKEN или TG_CHAT' };
+  }
+  var items = (d.items || []).slice(0, 60);
+  var m = d.mark || {};
+  var canMark = SHEETS[m.sheet] && m.field && SHEETS[m.sheet].indexOf(m.field) >= 0;
+  var sent = [], failed = 0;
+  items.forEach(function (it) {
+    var good = (it.messages || []).every(function (text) {
+      var ok = chats.every(function (c) {
+        return tgSendRetry(c, String(text || '')).indexOf('"ok":true') >= 0;
+      });
+      Utilities.sleep(400);
+      return ok;
+    });
+    if (!good) { failed++; return; }
+    if (canMark && it.id) {
+      var patch = {};
+      patch[m.field] = m.value;
+      updateRow(m.sheet, it.id, patch);
+    }
+    sent.push(it.id);
+  });
+  if (failed) return { ok: false, sent: sent, error: 'телеграм не принял ' + failed + ' из ' + items.length };
+  return { ok: true, sent: sent };
 }
 
 /* ——— Календарь ——— */
@@ -116,11 +165,39 @@ function setupUchet() {
   Logger.log('Ключ для админки: ' + cfg('ADMIN_KEY'));
 }
 
+/**
+ * Лист из SHEETS. Если в таблице его ещё нет (новый лист вроде «Счета»),
+ * заводится сам с заголовками - setupUchet для этого запускать не нужно.
+ */
 function sheetByName(name) {
   if (!SHEETS[name]) return null;
   var id = cfg('SHEET_ID');
   if (!id) return null;
-  return SpreadsheetApp.openById(id).getSheetByName(name);
+  var ss = SpreadsheetApp.openById(id);
+  var sh = ss.getSheetByName(name);
+  if (!sh) {
+    sh = ss.insertSheet(name);
+    sh.getRange(1, 1, 1, SHEETS[name].length).setValues([SHEETS[name]]).setFontWeight('bold');
+    sh.setFrozenRows(1);
+  }
+  return sh;
+}
+
+/**
+ * Заголовки новых колонок: пустые ячейки первой строки дописываются по SHEETS.
+ * Непустые не трогаем - если заголовок переименовали руками, это не наше дело:
+ * колонки всё равно читаются по порядку.
+ */
+function ensureHead(sh, name) {
+  var head = SHEETS[name];
+  var cur = sh.getRange(1, 1, 1, head.length).getValues()[0];
+  var fix = false;
+  var row = head.map(function (h, i) {
+    if (String(cur[i] === null ? '' : cur[i]).trim()) return cur[i];
+    fix = true;
+    return h;
+  });
+  if (fix) sh.getRange(1, 1, 1, head.length).setValues([row]).setFontWeight('bold');
 }
 
 function readSheet(name) {
@@ -155,6 +232,7 @@ function newId() {
 function addRow(name, row) {
   var sh = sheetByName(name);
   if (!sh) throw new Error('нет листа ' + name);
+  ensureHead(sh, name);
   var head = SHEETS[name];
   var id = row.id || newId();
   var line = head.map(function (h) { return h === 'id' ? id : (row[h] === undefined ? '' : row[h]); });
@@ -326,6 +404,7 @@ function adminPost(d) {
       var ids = (d.rows || []).map(function (r) { return addRow(d.sheet, r); });
       return json({ ok: true, ids: ids });
     }
+    if (d.op === 'tg') return json(tgBatch(d));
     return json({ ok: false, error: 'неизвестная операция' });
   } catch (err) {
     return json({ ok: false, error: String(err) });
