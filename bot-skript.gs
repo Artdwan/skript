@@ -12,6 +12,10 @@
  *   ASSIST_KEY - ключ Насти: открывает только воронку лидов на странице скрипта.
  *               Задаётся вручную в свойствах скрипта. Учеников, оплаты и группы
  *               по нему не отдаём, даже если он утечёт.
+ *   BILL_TOKEN - токен отдельного бота для счетов (бот домашек). Пусто - счета идут
+ *               тем же ботом и в те же чаты, что и пробные.
+ *   BILL_CHAT  - куда этот бот шлёт счета: id чата, можно несколько через запятую.
+ *               Находится функцией billFindChat, проверяется billTest.
  *
  * Цвета в календаре: жёлтый - окно свободно, фиолетовый - записано пробное.
  */
@@ -47,8 +51,8 @@ function tgChats() {
 }
 
 /** Одно сообщение одному адресату. Адрес: id чата или id чата:id топика. */
-function tgSend(target, text) {
-  var token = cfg('TG_TOKEN');
+function tgSend(target, text, tok) {
+  var token = tok || cfg('TG_TOKEN');
   if (!token || !target) return '';
   var payload = { chat_id: target, text: text, disable_web_page_preview: 'true' };
   var parts = String(target).split(':');
@@ -75,10 +79,10 @@ function tgTasks(text) {
 }
 
 /** Одно сообщение с повтором: на «слишком часто» телеграм говорит, сколько ждать. */
-function tgSendRetry(target, text) {
+function tgSendRetry(target, text, tok) {
   var r = '';
   for (var i = 0; i < 4; i++) {
-    r = tgSend(target, text);
+    r = tgSend(target, text, tok);
     var m = r.match(/"retry_after":(\d+)/);
     if (!m) return r;
     Utilities.sleep((Number(m[1]) + 1) * 1000);
@@ -86,39 +90,95 @@ function tgSendRetry(target, text) {
   return r;
 }
 
+/** Бот и адресаты для счетов: свой бот из BILL_TOKEN/BILL_CHAT, иначе как пробные. */
+function billBot() {
+  var token = cfg('BILL_TOKEN');
+  if (!token) return { token: cfg('TG_TOKEN'), chats: tgChats(), own: false };
+  var chats = cfg('BILL_CHAT').split(',').map(function (x) { return x.trim(); })
+                              .filter(function (x) { return x.length; });
+  return { token: token, chats: chats, own: true };
+}
+
 /**
  * Счета из кабинета. items - [{id, messages:[...]}]: у каждого счёта свои сообщения,
- * они уходят всем адресатам TG_CHAT по порядку. Отметку mark {sheet, field, value}
+ * они уходят всем адресатам по порядку. Отметку mark {sheet, field, value}
  * получает только тот счёт, чьи сообщения ушли все и всем - тогда повторная
- * отправка из кабинета не задублирует уже ушедшие.
+ * отправка из кабинета не задублирует уже ушедшие. Отметки ставятся одним проходом
+ * в конце, даже если посередине что-то упало.
  */
 function tgBatch(d) {
-  var chats = tgChats();
-  if (!cfg('TG_TOKEN') || !chats.length) {
-    return { ok: false, sent: [], error: 'в свойствах скрипта нет TG_TOKEN или TG_CHAT' };
+  var bot = billBot();
+  if (!bot.token || !bot.chats.length) {
+    return { ok: false, sent: [], error: bot.own
+      ? 'в свойствах скрипта нет BILL_CHAT - запусти billFindChat'
+      : 'в свойствах скрипта нет TG_TOKEN или TG_CHAT' };
   }
   var items = (d.items || []).slice(0, 60);
   var m = d.mark || {};
   var canMark = SHEETS[m.sheet] && m.field && SHEETS[m.sheet].indexOf(m.field) >= 0;
-  var sent = [], failed = 0;
-  items.forEach(function (it) {
-    var good = (it.messages || []).every(function (text) {
-      var ok = chats.every(function (c) {
-        return tgSendRetry(c, String(text || '')).indexOf('"ok":true') >= 0;
+  var sent = [], failed = 0, count = 0;
+  try {
+    items.forEach(function (it) {
+      var good = (it.messages || []).every(function (text) {
+        // первые 20 сообщений подряд, дальше по одному в секунду - так телеграм не тормозит
+        if (count++ >= 20) Utilities.sleep(1000);
+        return bot.chats.every(function (c) {
+          return tgSendRetry(c, String(text || ''), bot.token).indexOf('"ok":true') >= 0;
+        });
       });
-      Utilities.sleep(400);
-      return ok;
+      if (good) sent.push(it.id); else failed++;
     });
-    if (!good) { failed++; return; }
-    if (canMark && it.id) {
+  } finally {
+    if (canMark && sent.length) {
       var patch = {};
       patch[m.field] = m.value;
-      updateRow(m.sheet, it.id, patch);
+      updateRows(m.sheet, sent, patch);
     }
-    sent.push(it.id);
-  });
+  }
   if (failed) return { ok: false, sent: sent, error: 'телеграм не принял ' + failed + ' из ' + items.length };
   return { ok: true, sent: sent };
+}
+
+/**
+ * Для счетов: напишите боту домашек любое сообщение и запустите.
+ * Сохраняет BILL_CHAT и присылает проверочное сообщение.
+ */
+function billFindChat() {
+  var token = cfg('BILL_TOKEN');
+  if (!token) { Logger.log('Сначала впишите BILL_TOKEN в свойства скрипта'); return; }
+  var me = UrlFetchApp.fetch('https://api.telegram.org/bot' + token + '/getMe',
+                             { muteHttpExceptions: true }).getContentText();
+  Logger.log('Бот: ' + me);
+  var data = JSON.parse(UrlFetchApp.fetch('https://api.telegram.org/bot' + token + '/getUpdates',
+                                          { muteHttpExceptions: true }).getContentText());
+  if (!data.ok) {
+    Logger.log('Телеграм не отдал сообщения: ' + (data.description || '') +
+               '. Впишите BILL_CHAT руками: это CHAT_ID из свойств проекта, где живёт этот бот.');
+    return;
+  }
+  var chat = null;
+  (data.result || []).forEach(function (u) {
+    var msg = u.message || u.edited_message || {};
+    if (msg.chat && msg.chat.type === 'private') chat = msg.chat;
+  });
+  if (!chat) {
+    Logger.log('Личных сообщений боту не нашёл. Напишите ему что-нибудь и запустите ещё раз.');
+    return;
+  }
+  props().setProperty('BILL_CHAT', String(chat.id));
+  Logger.log('Чат для счетов сохранён: ' + chat.id + ' (' + (chat.first_name || '') + ')');
+  billTest();
+}
+
+/** Проверка: одно сообщение туда, куда пойдут счета. */
+function billTest() {
+  var bot = billBot();
+  if (!bot.own) Logger.log('BILL_TOKEN не задан - счета идут тем же ботом, что и пробные.');
+  if (!bot.token || !bot.chats.length) { Logger.log('Некуда слать: нет токена или чата.'); return; }
+  bot.chats.forEach(function (c) {
+    Logger.log(tgSend(c, 'Проверка: счета из кабинета будут приходить сюда.', bot.token)
+                 .replace(/"text":"[^"]*"/, ''));
+  });
 }
 
 /* ——— Календарь ——— */
@@ -170,11 +230,14 @@ function setupUchet() {
  * Лист из SHEETS. Если в таблице его ещё нет (новый лист вроде «Счета»),
  * заводится сам с заголовками - setupUchet для этого запускать не нужно.
  */
+/* Таблица открывается один раз за запуск: openById стоит полсекунды и больше. */
+var BOOK = null, BOOK_ID = '';
 function sheetByName(name) {
   if (!SHEETS[name]) return null;
   var id = cfg('SHEET_ID');
   if (!id) return null;
-  var ss = SpreadsheetApp.openById(id);
+  if (!BOOK || BOOK_ID !== id) { BOOK = SpreadsheetApp.openById(id); BOOK_ID = id; }
+  var ss = BOOK;
   var sh = ss.getSheetByName(name);
   if (!sh) {
     sh = ss.insertSheet(name);
@@ -239,6 +302,47 @@ function addRow(name, row) {
   var line = head.map(function (h) { return h === 'id' ? id : (row[h] === undefined ? '' : row[h]); });
   sh.appendRow(line);
   return id;
+}
+
+/** Несколько строк одной записью: быстрее, чем appendRow по одной. */
+function addRows(name, rows) {
+  if (!rows.length) return [];
+  var sh = sheetByName(name);
+  if (!sh) throw new Error('нет листа ' + name);
+  ensureHead(sh, name);
+  var head = SHEETS[name];
+  var ids = [];
+  var lines = rows.map(function (row) {
+    var id = row.id || newId();
+    ids.push(id);
+    return head.map(function (h) { return h === 'id' ? id : (row[h] === undefined ? '' : row[h]); });
+  });
+  var from = sh.getLastRow() + 1;
+  var more = from + lines.length - 1 - sh.getMaxRows();
+  if (more > 0) sh.insertRowsAfter(sh.getMaxRows(), more);
+  sh.getRange(from, 1, lines.length, head.length).setValues(lines);
+  return ids;
+}
+
+/** Одна и та же правка многим строкам: колонку id читаем один раз. */
+function updateRows(name, idList, patch) {
+  var sh = sheetByName(name);
+  if (!sh) throw new Error('нет листа ' + name);
+  var head = SHEETS[name];
+  var last = sh.getLastRow();
+  if (last < 2) return 0;
+  var want = {};
+  idList.forEach(function (id) { want[String(id)] = true; });
+  var ids = sh.getRange(2, 1, last - 1, 1).getValues();
+  var n = 0;
+  for (var i = 0; i < ids.length; i++) {
+    if (!want[String(ids[i][0])]) continue;
+    head.forEach(function (h, c) {
+      if (h !== 'id' && patch[h] !== undefined) sh.getRange(i + 2, c + 1).setValue(patch[h]);
+    });
+    n++;
+  }
+  return n;
 }
 
 function updateRow(name, id, patch) {
@@ -406,10 +510,19 @@ function adminPost(d) {
       return json({ ok: true, found: removed });
     }
     if (d.op === 'bulk') {
-      var ids = (d.rows || []).map(function (r) { return addRow(d.sheet, r); });
-      return json({ ok: true, ids: ids });
+      return json({ ok: true, ids: addRows(d.sheet, d.rows || []) });
     }
     if (d.op === 'tg') return json(tgBatch(d));
+    // Счета одним запросом: записать строки, сразу отправить, отметить ушедшие.
+    // added:true - строки уже в таблице, даже если телеграм потом не принял.
+    if (d.op === 'bills') {
+      var billIds = addRows(d.sheet, d.rows || []);
+      var r;
+      try { r = tgBatch(d); } catch (errTg) { r = { ok: false, sent: [], error: String(errTg) }; }
+      r.ids = billIds;
+      r.added = true;
+      return json(r);
+    }
     return json({ ok: false, error: 'неизвестная операция' });
   } catch (err) {
     return json({ ok: false, error: String(err) });
