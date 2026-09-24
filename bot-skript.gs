@@ -513,6 +513,15 @@ function adminPost(d) {
       return json({ ok: true, ids: addRows(d.sheet, d.rows || []) });
     }
     if (d.op === 'tg') return json(tgBatch(d));
+    // Нагрузка: занятия за период [from, to), даты yyyy-MM-dd по Минску, не больше 200 дней
+    if (d.op === 'lessons') {
+      var lf = new Date(String(d.from || '') + 'T00:00:00+03:00');
+      var lt = new Date(String(d.to || '') + 'T00:00:00+03:00');
+      if (isNaN(lf.getTime()) || isNaN(lt.getTime()) || lt <= lf || lt - lf > 200 * 86400000) {
+        return json({ ok: false, error: 'неверный период' });
+      }
+      return json({ ok: true, lessons: lessonsBetween(lf, lt) });
+    }
     // Счета одним запросом: записать строки, сразу отправить, отметить ушедшие.
     // added:true - строки уже в таблице, даже если телеграм потом не принял.
     if (d.op === 'bills') {
@@ -1051,6 +1060,36 @@ function hwInstall() {
   props().setProperty('HW_LAST', String(new Date().getTime()));
   hwEnsureProject();
   Logger.log('Готово: задачи на ДЗ будут появляться в течение 10 минут после конца занятия.');
+}
+
+/* ——— Нагрузка: занятия из «Основного расписания» за период ———
+ * Отмена занятия = событие удалено из календаря: удалённое просто не приходит.
+ * Личные события (к базе не привязались и на урок не похожи) из шлюза не уходят. */
+function lessonsBetween(from, to) {
+  var cal = CalendarApp.getCalendarById(HW_CAL);
+  if (!cal) throw new Error('нет доступа к календарю «Основное расписание»');
+  var groups = readSheet('Группы'), dirs = readSheet('Направления');
+  var now = new Date().getTime();
+  var out = [];
+  cal.getEvents(from, to).forEach(function (e) {
+    if (e.isAllDayEvent() || hwFree(e.getTitle())) return;
+    var s = e.getStartTime(), f = e.getEndTime();
+    if (s.getTime() < from.getTime() || s.getTime() >= to.getTime()) return;
+    var ev = { title: e.getTitle(), start: s, end: f };
+    var m = hwMatch(ev, groups, dirs);
+    if (!m.kind && !hwLessonLike(ev.title)) return;
+    out.push({
+      day: Utilities.formatDate(s, 'Europe/Minsk', 'yyyy-MM-dd'),
+      time: Utilities.formatDate(s, 'Europe/Minsk', 'HH:mm'),
+      min: Math.max(0, Math.round((f.getTime() - s.getTime()) / 60000)),
+      past: f.getTime() <= now,
+      title: String(ev.title || '').trim(),
+      kind: m.kind,
+      name: m.kind ? m.name : '',
+      how: m.how
+    });
+  });
+  return out;
 }
 
 /** Выключить автозадачи. */
