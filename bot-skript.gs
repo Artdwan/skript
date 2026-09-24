@@ -790,6 +790,12 @@ function hwDays(s) {
 
 function hwFree(title) { return /^\s*свободн/i.test(String(title || '')); }
 
+/** Похоже ли событие на занятие. Нужна, когда группу и ученика не нашли:
+ *  «Индив ЦТ» - занятие, задачу ставим; личная встреча без этих слов - пропускаем. */
+function hwLessonLike(title) {
+  return /групп|индив|пара|мат|хим|алгебр|геометр|цт|цэ|урок|заняти/i.test(String(title || ''));
+}
+
 /**
  * Кого касается занятие. ev - {title, start: Date}.
  * Возвращает {kind: 'группа'|'ученик'|'', name, how}.
@@ -895,7 +901,9 @@ function hwTick() {
       var groups = readSheet('Группы'), dirs = readSheet('Направления');
       lessons.forEach(function (ev) {
         if (seen[ev.key]) return;
-        addRow('Задачи', hwRow(ev, hwMatch(ev, groups, dirs)));
+        var m = hwMatch(ev, groups, dirs);
+        if (!m.kind && !hwLessonLike(ev.title)) return;   // не занятие
+        addRow('Задачи', hwRow(ev, m));
         seen[ev.key] = true;
         made++;
       });
@@ -915,8 +923,9 @@ function hwCheck() {
   Logger.log('Календарь открылся. Прошедших занятий за 7 дней: ' + lessons.length);
   lessons.forEach(function (ev) {
     var m = hwMatch(ev, groups, dirs);
-    Logger.log(Utilities.formatDate(ev.start, 'Europe/Minsk', 'EEE dd.MM HH:mm') + '  «' + ev.title +
-               '»  ->  ' + (m.kind ? m.kind + ' ' + m.name : 'не нашёл') + '  (' + m.how + ')');
+    var res = m.kind ? m.kind + ' ' + m.name + '  (' + m.how + ')'
+            : (hwLessonLike(ev.title) ? 'не нашёл, задача будет без группы' : 'не занятие, пропущу');
+    Logger.log(Utilities.formatDate(ev.start, 'Europe/Minsk', 'EEE dd.MM HH:mm') + '  «' + ev.title + '»  ->  ' + res);
   });
 }
 
