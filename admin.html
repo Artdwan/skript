@@ -1172,6 +1172,7 @@
     var gSubj = mkSel(DIR_SUBJ, "математика");
     var gKl   = mkSel([""].concat(PUPIL_KL), "");
     var gFmt  = mkSel(DIR_FMT, "группа");
+    var gPrice= mkInp("number", "260");
     var gSeats= mkSel(SEATS, String(SEATS_FMT["группа"]));
     var gMins = mkSel(MINS, "");
     var gDays = mkDays("", function(){ return gMins.value; });
@@ -1186,10 +1187,21 @@
       gDays.redraw();
     });
     gMins.addEventListener("change", function(){ gDays.redraw(); });
-    [["Название",gName],["Предмет",gSubj],["Класс",gKl],["Формат",gFmt],
+    var gl = {};
+    [["Название",gName],["Предмет",gSubj],["Класс",gKl],["Формат",gFmt],["Абонемент",gPrice],
      ["Мест",gSeats],["Минут в занятии",gMins],["Преподаватель",gTeach]].forEach(function(pair){
-      gf.appendChild(fld(pair[0], pair[1]));
+      gl[pair[0]] = fld(pair[0], pair[1]);
+      gf.appendChild(gl[pair[0]]);
     });
+    /* у группы — абонемент за месяц, у пары и индивидуального — цена одного занятия */
+    function gPriceLabel(){
+      var fm = gFmt.value;
+      gl["Абонемент"].querySelector("span").textContent =
+        fm === "индивидуально" ? "Цена за занятие" : fm === "пара" ? "Цена занятия с ученика" : "Абонемент";
+      gPrice.placeholder = fm === "группа" ? "260" : "цена";
+    }
+    gFmt.addEventListener("change", gPriceLabel);
+    gPriceLabel();
     gf.appendChild(fldBox("Расписание", gDays, true));
     gf.appendChild(gAdd);
     gAdd.addEventListener("click", function(){
@@ -1200,17 +1212,18 @@
         toast("Такая группа уже есть"); return;
       }
       var row = {"название":nm, "предмет":gSubj.value, "класс":gKl.value,
-                 "формат":gFmt.value, "дни":gDays.value, "мест":gSeats.value,
+                 "формат":gFmt.value, "абонемент":gPrice.value.trim(),
+                 "дни":gDays.value, "мест":gSeats.value,
                  "минуты":gMins.value, "преподаватель":gTeach.value.trim(), "заметка":""};
       localAdd("Группы", row);
-      gName.value = ""; gKl.value = ""; gTeach.value = "";
+      gName.value = ""; gKl.value = ""; gTeach.value = ""; gPrice.value = "";
       render();
       bg(addRemote("Группы", row), "Группа добавлена");
     });
     np.appendChild(gf);
     np.appendChild(el("p","col-hint",
-      "Название группы — то же, что выбирается в направлении ученика. " +
-      "Дни и преподаватель нужны только для памяти, на расчёты не влияют."));
+      "Название — то же, что выбирается в направлении ученика. У индивидуального и пары " +
+      "цена, длительность и дни отсюда подставятся ученику, когда его направление привяжут к этой строке."));
     w.appendChild(np);
 
     /* переключатель форматов: все, группы, пары, индивидуальные */
@@ -1758,9 +1771,18 @@
     var g = groupByName(d["группа"]);
     return g ? String(g["минуты"] || "").trim() : "";
   }
+  /* Цена занятия: своя в направлении, а если её нет — из привязанной строки «Групп»
+     того же формата (у пары и индивидуального там цена одного занятия). */
+  function dirLessonPrice(d){
+    var c = String(d["цена_занятия"] || "").trim();
+    if(c) return c;
+    var g = groupByName(d["группа"]);
+    if(g && grpFmt(g) === String(d["формат"] || "").trim()) return String(g["абонемент"] || "").trim();
+    return "";
+  }
   function dirPrice(d){
     if(perLesson(d)){
-      var c = String(d["цена_занятия"] || "").trim();
+      var c = dirLessonPrice(d);
       var m = String(dirMins(d) || "").trim();
       if(!c) return "";
       return c + " за занятие" + (m ? " по " + m + " мин" : "") +
@@ -3450,7 +3472,7 @@
     var days = dirDays(d);
     var one = pl && billF.unit === "one";
     var n = one ? 1 : lessonsIn(days, a, b);
-    var price = pl ? num(d["цена_занятия"]) : 0;
+    var price = pl ? num(dirLessonPrice(d)) : 0;
     var x = {dir:d.id, ученик:r["ученик"], предмет:d["предмет"], формат:d["формат"],
              группа:d["группа"] || "", per:per, pl:pl, one:one, n:n, price:price,
              full:0, disc:PAY_DISC[0], sum:0, ok:true, warn:[], hint:null,
