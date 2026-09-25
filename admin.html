@@ -4060,12 +4060,14 @@
     p1.appendChild(el("h3", null, "Часы в неделю"));
     var cur = weekRows(mon), prev = weekRows(addDays(mon, -7)), next = weekRows(addDays(mon, 7));
     var done = cur.filter(function(x){ return x.past; });
-    var past8 = [];
-    for(var i = 1; i <= 8; i++){
+    /* среднее — по четырём последним неделям, где в календаре были занятия:
+       пустые недели (каникулы, отпуск) среднее не занижают */
+    var past4 = [];
+    for(var i = 1; i <= 8 && past4.length < 4; i++){
       var wr = weekRows(addDays(mon, -7 * i));
-      if(wr.length) past8.push(sumMin(wr));
+      if(wr.length) past4.push(sumMin(wr));
     }
-    var avg = past8.length ? past8.reduce(function(a, b){ return a + b; }, 0) / past8.length : 0;
+    var avg = past4.length ? past4.reduce(function(a, b){ return a + b; }, 0) / past4.length : 0;
     var stats = el("div","stats");
     stats.appendChild(statTile("Эта неделя", hrs(sumMin(cur)) + " ч",
       "проведено " + hrs(sumMin(done)) + " ч, впереди " + hrs(sumMin(cur) - sumMin(done)) + " ч · " +
@@ -4073,9 +4075,8 @@
     stats.appendChild(statTile("Прошлая неделя", hrs(sumMin(prev)) + " ч",
       prev.length + " " + plural(prev.length, "занятие", "занятия", "занятий")));
     stats.appendChild(statTile("В среднем", hrs(avg) + " ч",
-      past8.length ? "за " + past8.length + " " + plural(past8.length, "прошлую неделю", "прошлые недели", "прошлых недель") +
-                     (past8.length < 8 ? " — раньше в календаре пусто" : "")
-                   : "прошлых недель в календаре нет"));
+      past4.length ? "за " + past4.length + " " + plural(past4.length, "прошлую неделю", "прошлые недели", "прошлых недель") +
+                     " с занятиями" : "прошлых недель в календаре нет"));
     stats.appendChild(statTile("Следующая неделя", hrs(sumMin(next)) + " ч", "по календарю, план"));
     p1.appendChild(stats);
 
@@ -4166,11 +4167,14 @@
     var p3 = el("div","panel");
     p3.appendChild(el("h3", null, "Заполненность групп"));
     var last4 = rows.filter(function(x){ return x.day >= addDays(mon, -28) && x.day < mon; });
+    /* делим на недели, где в календаре вообще были занятия: пустая неделя — каникулы, не простой группы */
+    var wk4 = 0;
+    for(var j = 1; j <= 4; j++) if(weekRows(addDays(mon, -7 * j)).length) wk4++;
     var gl = DATA["Группы"].map(function(g){
       var name = String(g["название"] || "").trim();
       var n = pupilsOf(name).length, seats = seatsOf(g);
       var m = sumMin(last4.filter(function(x){ return x.kind === "группа" && x.name === name; }));
-      return {name:name, n:n, seats:seats, fill:seats ? n / seats : null, week:m / 4,
+      return {name:name, n:n, seats:seats, fill:seats ? n / seats : null, week:wk4 ? m / wk4 : 0,
               fmt:String(g["формат"] || "").trim() || "группа"};
     }).filter(function(g){ return g.name; })
       .sort(function(a, b){
@@ -4202,7 +4206,8 @@
       b3.appendChild(tr);
     });
     t3.appendChild(b3);
-    p3.appendChild(el("p","col-hint", "Часы — среднее за четыре прошлые недели. «Нет в календаре» — событие " +
+    p3.appendChild(el("p","col-hint", "Часы — среднее за четыре прошлые недели, пустые недели не в счёт. " +
+      "Мест, если в карточке группы не указано, считается " + SEATS_FMT["группа"] + ". «Нет в календаре» — событие " +
       "не привязалось к группе: проверь дни и время группы или название события."));
     w.appendChild(p3);
 
