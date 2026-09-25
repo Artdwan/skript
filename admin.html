@@ -1258,8 +1258,7 @@
           var pl = pupilsOf(g["название"]);
           line.appendChild(nm); line.appendChild(cl); line.appendChild(seatsPill(g, pl.length));
           var ab = String(g["абонемент"] || "").trim();
-          line.appendChild(el("span", ab ? "pill" : "pill pill-warn",
-                              ab ? ab + " в месяц" : "цена не задана"));
+          line.appendChild(el("span", ab ? "pill" : "pill pill-warn", grpPriceText(g)));
           r.className = "grow clickable";
           r.addEventListener("click", function(){
             groupOpen = g.id; pupilOpen = null; render();
@@ -1355,8 +1354,7 @@
     var tags = el("div","card-tags");
     tags.style.margin = "0 0 16px";
     var abNow = String(g["абонемент"] || "").trim();
-    tags.appendChild(el("span", abNow ? "pill" : "pill pill-warn",
-                        abNow ? abNow + " в месяц" : "цена не задана"));
+    tags.appendChild(el("span", abNow ? "pill" : "pill pill-warn", grpPriceText(g)));
     tags.appendChild(seatsPill(g, pl.length));
     var minNow = String(g["минуты"] || "").trim();
     if(minNow) tags.appendChild(el("span","pill", minNow + " минут"));
@@ -1374,15 +1372,26 @@
                                 function(){ saveSoon(); });
     f["минуты"].addEventListener("change", function(){ f["дни"].redraw(); });
     f["преподаватель"] = mkInp("text", "кто ведёт", g["преподаватель"]);
-    var form = el("div","form");
+    var form = el("div","form"), gl = {};
     [["Название","название"],["Предмет","предмет"],["Класс","класс"],["Формат","формат"],
      ["Абонемент","абонемент"],["Мест","мест"],["Минут в занятии","минуты"],
      ["Преподаватель","преподаватель"]]
-      .forEach(function(pair){ form.appendChild(fld(pair[0], f[pair[1]])); });
+      .forEach(function(pair){ gl[pair[1]] = fld(pair[0], f[pair[1]]); form.appendChild(gl[pair[1]]); });
+    /* у пары и индивидуального то же поле — цена одного занятия */
+    function priceLabel(){
+      var fm = f["формат"].value;
+      gl["абонемент"].querySelector("span").textContent =
+        fm === "индивидуально" ? "Цена за занятие" : fm === "пара" ? "Цена занятия с ученика" : "Абонемент";
+      f["абонемент"].placeholder = fm === "группа" ? "260" : "цена";
+    }
+    f["формат"].addEventListener("change", priceLabel);
+    priceLabel();
     form.appendChild(fldBox("Расписание", f["дни"], true));
     b.appendChild(form);
     b.appendChild(el("p","col-hint",
-      "Абонемент группы подставляется всем её ученикам. Если у кого-то цена своя — " +
+      "Абонемент группы подставляется всем её ученикам. У пары и индивидуального в этом поле " +
+      "цена одного занятия — она подставится ученику, когда его направление привяжут к этой строке. " +
+      "Если у кого-то цена своя — " +
       "скидка или старый тариф — она ставится в его направлении и перебивает групповую. " +
       "Мест по умолчанию: группа 7, пара 2, индивидуально 1. В текстах клиентам обещано " +
       "«до 7 человек» — если поставить больше, скрипт Директа придётся править."));
@@ -1416,8 +1425,7 @@
                           daysText(g["дни"], g["минуты"])].filter(Boolean).join(" · ");
       tags.innerHTML = "";
       var ab = String(g["абонемент"] || "").trim();
-      tags.appendChild(el("span", ab ? "pill" : "pill pill-warn",
-                          ab ? ab + " в месяц" : "цена не задана"));
+      tags.appendChild(el("span", ab ? "pill" : "pill pill-warn", grpPriceText(g)));
       tags.appendChild(seatsPill(g, pl.length));
       var mn = String(g["минуты"] || "").trim();
       if(mn) tags.appendChild(el("span","pill", mn + " минут"));
@@ -2042,6 +2050,15 @@
     draw();
     box.appendChild(chips); box.appendChild(times);
     box.redraw = draw;
+    /* заменить выбранные дни целиком: так подставляется расписание из «Групп» */
+    box.set = function(v){
+      picked = {};
+      parseDays(v).forEach(function(x){ picked[x.d] = x.t; });
+      var r0 = String(v || "").trim();
+      lost = r0 && !parseDays(r0).length ? r0 : "";
+      draw();
+      if(onChange) onChange();
+    };
     Object.defineProperty(box, "value", {
       get: function(){ return list().length ? packDays(list()) : (lost || ""); }
     });
@@ -2111,6 +2128,13 @@
   function grpFmt(g){
     var f = String(g["формат"] || "").trim();
     return (f === "пара" || f === "индивидуально") ? f : "группа";
+  }
+  /* у группы в поле «абонемент» цена за месяц, у пары и индивидуального — за одно занятие */
+  function grpPriceText(g){
+    var ab = String(g["абонемент"] || "").trim();
+    if(!ab) return "цена не задана";
+    var f = grpFmt(g);
+    return ab + (f === "группа" ? " в месяц" : f === "пара" ? " за занятие с ученика" : " за занятие");
   }
   function groupOptsFor(fmt, cur){
     var list = [""];
@@ -2425,6 +2449,11 @@
     /* дни занятий — по ним в счетах считается, сколько занятий в месяце */
     wr["Дни занятий"] = fldBox("Дни занятий", f.days, true);
     form.appendChild(wr["Дни занятий"]);
+    /* что подставилось из выбранной строки «Групп» */
+    f.note = el("p","col-hint","");
+    f.note.style.gridColumn = "1 / -1";
+    f.note.style.margin = "0";
+    form.appendChild(f.note);
     f.min.addEventListener("input", function(){ f.days.redraw(); });
     /* группа — месячный абонемент; пара и индивидуальное — цена за занятие.
        У пары группа всё равно бывает: в листе «Группы» пара — такая же строка. */
@@ -2478,6 +2507,27 @@
       var g = groupByName(f.grp.value);
       var subj = g ? String(g["предмет"] || "").trim() : "";
       if(subj && DIR_SUBJ.indexOf(subj) >= 0) f.subj.value = subj;
+      /* у пары и индивидуального берём оттуда же цену, длительность и дни — всё, что там указано */
+      f.note.textContent = "";
+      if(g && (f.fmt.value === "индивидуально" || f.fmt.value === "пара")){
+        var pr = String(g["абонемент"] || "").trim();
+        var mn = String(g["минуты"] || "").trim();
+        var dy = String(g["дни"] || "").trim();
+        var got = [], miss = [], was = f.auto || {};
+        /* поле, подставленное прошлым выбором и не тронутое руками, чистим — иначе останется чужая цена */
+        if(pr){ f.pr.value = pr; got.push("цена " + pr); }
+        else { miss.push("цена"); if(was.pr && f.pr.value === was.pr) f.pr.value = ""; }
+        if(mn){ f.min.value = mn; got.push(mn + " мин"); }
+        else { miss.push("длительность"); if(was.mn && f.min.value === was.mn) f.min.value = ""; }
+        if(dy){ f.days.set(dy); got.push(dy); }
+        else { miss.push("дни"); if(was.dy && f.days.value === was.dy) f.days.set(""); }
+        f.auto = {pr:pr ? f.pr.value : "", mn:mn ? f.min.value : "", dy:dy ? f.days.value : ""};
+        f.days.redraw();
+        f.note.textContent = (got.length ? "Подставлено из «" + f.grp.value + "»: " + got.join(", ") + ". " : "") +
+          (miss.length ? "В «Группах» у «" + f.grp.value + "» не указано: " + miss.join(", ") +
+                         " — впиши здесь или в карточке занятия." : "");
+        f.note.textContent = f.note.textContent.trim();
+      }
       hintFromGroup();
     });
     hintFromGroup();
