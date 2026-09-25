@@ -1828,8 +1828,10 @@
     add.type = "button"; add.title = "добавить свой источник";
     var del = el("button","src-b","✕");
     del.type = "button"; del.title = "убрать источник из списка";
+    var edt = el("button","src-b","✎");
+    edt.type = "button"; edt.title = "поправить текст источника";
     var row = el("div","src-row");
-    row.appendChild(sel); row.appendChild(add); row.appendChild(del);
+    row.appendChild(sel); row.appendChild(add); row.appendChild(edt); row.appendChild(del);
     box.appendChild(row);
     var note = el("p","col-hint","");
     note.hidden = true;
@@ -1840,8 +1842,72 @@
     function syncDel(){
       var v = sel.value;
       del.hidden = !v || PUPIL_SRC.indexOf(v) >= 0;
+      edt.hidden = !v || PUPIL_SRC.indexOf(v) >= 0;
       armed = false; del.textContent = "✕";
     }
+    function withSrc(v){
+      return DATA["Ученики"].filter(function(p){ return String(p["источник"] || "").trim() === v; });
+    }
+    function ensureOpt(v){
+      if(!Array.from(sel.options).some(function(o){ return o.value === v; })){
+        var o = document.createElement("option");
+        o.value = v; o.textContent = v;
+        sel.appendChild(o);
+      }
+    }
+
+    /* правка текста: у этого ученика или у всех, у кого стоит тот же источник */
+    edt.addEventListener("click", function(){
+      var v = sel.value;
+      if(editing || !v || PUPIL_SRC.indexOf(v) >= 0) return;
+      editing = true;
+      var who = withSrc(v);
+      var inp = mkInp("text", "как о нас узнали", v);
+      var line = el("div","src-row");
+      line.appendChild(inp);
+      var btns = who.length > 1
+        ? [["у всех (" + who.length + ")", "all"], ["только здесь", "one"]]
+        : [["ок", "all"]];
+      btns.forEach(function(bd){
+        var b = el("button","src-b", bd[0]); b.type = "button";
+        b.addEventListener("click", function(){ apply(bd[1]); });
+        line.appendChild(b);
+      });
+      var no = el("button","src-b","отмена"); no.type = "button";
+      line.appendChild(no);
+      box.insertBefore(line, note);
+      if(who.length > 1) say("«" + v + "» стоит у " + who.length + " " + plural(who.length, "ученика", "учеников", "учеников") +
+                             ". Поправить у всех или только у этого?");
+      inp.focus(); inp.select();
+      function close(){ box.removeChild(line); editing = false; }
+      function apply(mode){
+        var nv = inp.value.replace(/\s+/g, " ").trim();
+        if(!nv || nv === v){ close(); say(""); return; }
+        ensureOpt(nv);
+        if(mode === "all"){
+          /* у остальных — сразу в таблицу; этот ученик сохранится вместе с карточкой */
+          var rest = who;
+          rest.forEach(function(p){ localPatch("Ученики", p.id, {"источник":nv}); });
+          Array.from(sel.options).forEach(function(o){ if(o.value === v) sel.removeChild(o); });
+          if(rest.length){
+            bg(rest.reduce(function(chain, p){
+              return chain.then(function(){
+                return send("update","Ученики",{id:p.id, row:{"источник":nv}});
+              });
+            }, Promise.resolve()), "Источник поправлен");
+          }
+        }
+        sel.value = nv;
+        close(); syncDel(); fire();
+        say(mode === "all" ? "Поправил: «" + nv + "»." : "Поправил только здесь, у остальных осталось «" + v + "».");
+      }
+      no.addEventListener("click", function(){ close(); say(""); });
+      inp.addEventListener("keydown", function(e){
+        /* Enter сам решает, только когда выбирать не из чего */
+        if(e.key === "Enter"){ e.preventDefault(); if(who.length <= 1) apply("all"); }
+        if(e.key === "Escape"){ e.preventDefault(); close(); say(""); }
+      });
+    });
     sel.addEventListener("change", function(){ say(""); syncDel(); fire(); });
 
     add.addEventListener("click", function(){
