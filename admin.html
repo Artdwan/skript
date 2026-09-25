@@ -1753,7 +1753,7 @@
   function dirPrice(d){
     if(perLesson(d)){
       var c = String(d["цена_занятия"] || "").trim();
-      var m = String(d["минуты"] || "").trim();
+      var m = String(dirMins(d) || "").trim();
       if(!c) return "";
       return c + " за занятие" + (m ? " по " + m + " мин" : "") +
              (isPair(d) ? " с ученика" : "");
@@ -2107,6 +2107,20 @@
     var r = DATA["Ученики"].filter(function(p){ return String(p.id) === String(id); });
     return r.length ? r[0] : null;
   }
+  /* строки «Групп» нужного формата: группа, пара или индивидуальное занятие */
+  function grpFmt(g){
+    var f = String(g["формат"] || "").trim();
+    return (f === "пара" || f === "индивидуально") ? f : "группа";
+  }
+  function groupOptsFor(fmt, cur){
+    var list = [""];
+    DATA["Группы"].forEach(function(g){
+      var n = String(g["название"] || "").trim();
+      if(n && grpFmt(g) === fmt && list.indexOf(n) < 0) list.push(n);
+    });
+    if(cur && list.indexOf(String(cur)) < 0) list.push(String(cur));
+    return list;
+  }
   function groupOpts(cur){
     var list = [""];
     DATA["Группы"].forEach(function(g){
@@ -2398,7 +2412,7 @@
     var f = {};
     f.subj = mkSel(DIR_SUBJ, d["предмет"] || "математика");
     f.fmt  = mkSel(DIR_FMT,  d["формат"]  || "группа");
-    f.grp  = mkSel(groupOpts(d["группа"]), d["группа"] || "");
+    f.grp  = mkSel(groupOptsFor(d["формат"] || "группа", d["группа"]), d["группа"] || "");
     f.ab   = mkInp("number", "по группе", d["абонемент"]);
     f.pr   = mkInp("number", "цена", d["цена_занятия"]);
     f.min  = mkInp("number", "мин",  d["минуты"]);
@@ -2414,19 +2428,33 @@
     f.min.addEventListener("input", function(){ f.days.redraw(); });
     /* группа — месячный абонемент; пара и индивидуальное — цена за занятие.
        У пары группа всё равно бывает: в листе «Группы» пара — такая же строка. */
+    /* в списке — только строки «Групп» того же формата; выбранное сохраняется, если подходит */
+    function fillGrp(){
+      var keep = f.grp.value;
+      /* своя прежняя привязка остаётся в списке, даже если у той строки другой формат */
+      var own = f.fmt.value === (d["формат"] || "группа") ? d["группа"] : "";
+      var opts = groupOptsFor(f.fmt.value, own);
+      f.grp.innerHTML = "";
+      opts.forEach(function(o){
+        var e = document.createElement("option");
+        e.value = o;
+        e.textContent = o || (f.fmt.value === "группа" ? "—" : "не привязано");
+        f.grp.appendChild(e);
+      });
+      f.grp.value = opts.indexOf(keep) >= 0 ? keep : "";
+    }
     function sync(){
       var fm = f.fmt.value;
-      var grp = fm !== "индивидуально";
       var per = fm === "пара" || fm === "индивидуально";
-      wr["Группа"].style.display = grp ? "" : "none";
+      fillGrp();
+      wr["Группа"].querySelector("span").textContent =
+        fm === "индивидуально" ? "Занятие из «Групп»" : fm === "пара" ? "Пара из «Групп»" : "Группа";
       wr["Абонемент"].style.display = per ? "none" : "";
       wr["Цена за занятие"].style.display = per ? "" : "none";
       wr["Длительность, мин"].style.display = per ? "" : "none";
       wr["Цена за занятие"].querySelector("span").textContent =
         fm === "пара" ? "Цена занятия с ученика" : "Цена за занятие";
       wr["Дни занятий"].style.display = per ? "" : "none";
-      wr["Дни занятий"].querySelector("span").textContent =
-        fm === "пара" ? "Дни занятий · если пусто — по группе" : "Дни занятий";
       hintFromGroup();
     }
     /* цена и длительность выбранной группы видны прямо в подписи поля */
@@ -2434,13 +2462,24 @@
       var g = groupByName(f.grp.value);
       var price = g ? String(g["абонемент"] || "").trim() : "";
       var mins  = g ? String(g["минуты"] || "").trim() : "";
+      var days  = g ? String(g["дни"] || "").trim() : "";
       f.ab.placeholder = price ? "по группе " + price : "цена группы не задана";
       wr["Абонемент"].querySelector("span").textContent =
         price ? "Абонемент · по группе " + price : "Абонемент";
-      if(g && mins && !f.min.value) f.min.placeholder = "по группе " + mins;
+      f.min.placeholder = (g && mins) ? "по группе " + mins : "мин";
+      /* дни и длительность, если свои не заданы, берутся из выбранной строки «Групп» */
+      wr["Дни занятий"].querySelector("span").textContent = g
+        ? "Дни занятий · если пусто — по «" + f.grp.value + "»" + (days ? ": " + days : "")
+        : "Дни занятий";
     }
     f.fmt.addEventListener("change", sync);
-    f.grp.addEventListener("change", hintFromGroup);
+    f.grp.addEventListener("change", function(){
+      /* выбрали занятие из «Групп» — предмет подтягиваем оттуда же */
+      var g = groupByName(f.grp.value);
+      var subj = g ? String(g["предмет"] || "").trim() : "";
+      if(subj && DIR_SUBJ.indexOf(subj) >= 0) f.subj.value = subj;
+      hintFromGroup();
+    });
     hintFromGroup();
     sync();
     f.form = form;
@@ -2448,7 +2487,7 @@
       var fm = f.fmt.value;
       var per = fm === "пара" || fm === "индивидуально";
       return {"ученик":name, "предмет":f.subj.value, "формат":fm,
-              "группа":fm === "индивидуально" ? "" : f.grp.value,
+              "группа":f.grp.value,
               "абонемент":per ? "" : f.ab.value,
               "цена_занятия":per ? f.pr.value : "", "минуты":per ? f.min.value : "",
               "дни":per ? f.days.value : "",
