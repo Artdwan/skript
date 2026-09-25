@@ -229,6 +229,10 @@
          border-radius:8px;padding:5px 9px;cursor:pointer}
   .nav-b:disabled{opacity:.3;cursor:default}
   .nav-x{margin-left:auto;font-size:12px}
+  .load-t td,.load-t th{white-space:nowrap}
+  .load-t td.num,.load-t th.num{text-align:right;padding-right:14px;font-variant-numeric:tabular-nums}
+  .load-t tr.now td{font-weight:600}
+  .load-t tr.plan td{color:var(--muted)}
   .seg{display:inline-flex;border:1px solid var(--line);border-radius:999px;overflow:hidden}
   .seg button{font:500 12.5px/1 var(--sans);padding:8px 12px;border:0;background:var(--card);color:var(--ink);cursor:pointer}
   .seg button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
@@ -534,6 +538,7 @@
     {id:"groups", name:"Группы"},
     {id:"pupils", name:"Ученики"},
     {id:"pay",    name:"Оплаты"},
+    {id:"load",   name:"Нагрузка"},
     {id:"cal",    name:"Календарь"}
   ];
 
@@ -562,6 +567,7 @@
     });
     var rb = el("button","tab","Обновить");
     rb.addEventListener("click", function(){
+      LOAD.rows = null; LOAD.err = "";           /* «Нагрузка» перечитает календарь при показе */
       Promise.all([load(), loadCalendar()])
         .then(function(){ render(); toast("Обновлено"); })
         .catch(function(e){ if(!keyDied(e)) toast("Не обновилось: " + e.message); });
@@ -575,6 +581,7 @@
     if(tab === "groups") renderGroups(w);
     if(tab === "pupils") renderPupils(w);
     if(tab === "pay")    renderPay(w);
+    if(tab === "load")   renderLoad(w);
     if(tab === "cal")    renderCal(w);
 
     app.appendChild(w);
@@ -3907,6 +3914,328 @@
       f.appendChild(r);
     });
     w.appendChild(f);
+  }
+
+  /* ════════════════════════ нагрузка ════════════════════════
+     Часы берутся из календаря «Основное расписание» через шлюз: он же привязывает
+     занятие к группе или ученику тем же правилом, что задачи на ДЗ. Отменённое
+     занятие удаляется из календаря — тогда его здесь просто нет. Личные события
+     шлюз не отдаёт. Деньги — из «Оплат» по дате оплаты. */
+  var LOAD = {rows:null, err:"", busy:false, month:""};
+  var FMTS = [{k:"группа", n:"Группы"}, {k:"пара", n:"Пары"},
+              {k:"индивидуально", n:"Индивидуальные"}, {k:"—", n:"Не привязано"}];
+
+  function localToday(){ return new Date().toLocaleDateString("sv-SE", {timeZone:TZ}); }
+  function isoOf(t){ return new Date(t).toISOString().slice(0, 10); }
+  function addDays(iso, n){ return isoOf(dayUTC(iso) + n * 86400000); }
+  function mondayOf(iso){ return addDays(iso, -((new Date(dayUTC(iso)).getUTCDay() + 6) % 7)); }
+  function wdOf(iso){ return WCODES[(new Date(dayUTC(iso)).getUTCDay() + 6) % 7]; }
+  function hrs(min){ return String(Math.round(min / 6) / 10).replace(".", ","); }
+  function sumMin(list){ return list.reduce(function(a, x){ return a + x.min; }, 0); }
+  function weekLabel(ws){
+    var we = addDays(ws, 6);
+    function d(iso, m){
+      return new Date(dayUTC(iso)).toLocaleDateString("ru-RU",
+        m ? {day:"numeric", month:"short", timeZone:"UTC"} : {day:"numeric", timeZone:"UTC"});
+    }
+    return ws.slice(5, 7) === we.slice(5, 7) ? d(ws) + "–" + d(we, true) : d(ws, true) + " – " + d(we, true);
+  }
+
+  function loadRange(){
+    var t = localToday(), mon = mondayOf(t);
+    var from = addDays(mon, -56);
+    var m2 = ymAdd(t.slice(0, 7), -2) + "-01";
+    if(m2 < from) from = m2;
+    return {from:from, to:addDays(mon, 14)};
+  }
+  /* чтение без очереди записей: ничего не меняет в таблице */
+  function ask(op, extra){
+    var body = {action:"admin", k:key, op:op};
+    Object.keys(extra || {}).forEach(function(k){ body[k] = extra[k]; });
+    return fetch(HOOK, {method:"POST", headers:{"Content-Type":"text/plain;charset=utf-8"},
+                        body:JSON.stringify(body)})
+      .then(function(r){ return r.json(); })
+      .then(function(res){
+        if(!res.ok) throw new Error(res.error || "шлюз не ответил");
+        return res;
+      });
+  }
+  function loadLessons(){
+    if(LOAD.busy) return;
+    LOAD.busy = true; LOAD.err = "";
+    ask("lessons", loadRange()).then(function(res){
+      LOAD.rows = (res.lessons || []).slice().sort(function(a, b){
+        return (a.day + a.time).localeCompare(b.day + b.time);
+      });
+    }).catch(function(e){
+      if(keyDied(e)) return;
+      LOAD.rows = null;
+      LOAD.err = e.message;
+    }).then(function(){
+      LOAD.busy = false;
+      if(tab === "load") softRender();
+    });
+  }
+
+  /* формат занятия: у группы — формат группы, у ученика — формат его поурочного направления */
+  function lessonFmt(x){
+    if(x.kind === "группа"){
+      var g = groupByName(x.name);
+      var f = g ? String(g["формат"] || "").trim() : "";
+      return (f === "пара" || f === "индивидуально") ? f : "группа";
+    }
+    if(x.kind === "ученик"){
+      var fs = dirsOf(x.name).filter(perLesson).map(function(d){ return String(d["формат"]).trim(); });
+      return (fs.length && fs.every(function(f){ return f === "пара"; })) ? "пара" : "индивидуально";
+    }
+    return "—";
+  }
+  function dirFmt(d){
+    var f = String(d["формат"] || "").trim();
+    if(f === "пара" || f === "индивидуально" || f === "группа") return f;
+    return String(d["группа"] || "").trim() ? "группа" : "—";
+  }
+  /* К какому формату относится оплата: по счёту, из которого она сделана,
+     иначе по направлениям ученика, если формат у него один. Иначе — не разнесена. */
+  function payFmt(o){
+    var bill = DATA["Счета"].filter(function(b){
+      return String(b["оплата_id"] || "") === String(o.id);
+    })[0];
+    if(bill && String(bill["формат"] || "").trim()) return dirFmt(bill);
+    var fs = [];
+    dirsOf(o["ученик"]).forEach(function(d){
+      var f = dirFmt(d);
+      if(fs.indexOf(f) < 0) fs.push(f);
+    });
+    if(!fs.length){
+      var p = pupilByName(o["ученик"]);
+      if(p && String(p["формат"] || "").trim()) fs.push(dirFmt(p));
+    }
+    return fs.length === 1 ? fs[0] : "—";
+  }
+
+  function numTd(txt){ return el("td","num", txt); }
+  function numTh(txt){ return el("th","num", txt); }
+  function tableIn(box){
+    var wrap = el("div","tbl-wrap");
+    var t = document.createElement("table");
+    t.className = "load-t";
+    wrap.appendChild(t);
+    box.appendChild(wrap);
+    return t;
+  }
+
+  function renderLoad(w){
+    if(!LOAD.rows && !LOAD.err && !LOAD.busy) loadLessons();
+    if(LOAD.err){
+      var pe = el("div","panel");
+      pe.appendChild(el("h3", null, "Нагрузка"));
+      pe.appendChild(el("p","empty","Календарь не прочитался: " + LOAD.err));
+      var again = el("button","btn","Попробовать ещё раз");
+      again.addEventListener("click", function(){ LOAD.err = ""; loadLessons(); render(); });
+      pe.appendChild(again);
+      w.appendChild(pe);
+      return;
+    }
+    if(!LOAD.rows){
+      var pw = el("div","panel");
+      pw.appendChild(el("h3", null, "Нагрузка"));
+      pw.appendChild(el("p","empty","Считаю занятия из календаря «Основное расписание»…"));
+      w.appendChild(pw);
+      return;
+    }
+    var rows = LOAD.rows.map(function(x){
+      var y = {}; Object.keys(x).forEach(function(k){ y[k] = x[k]; });
+      y.fmt = lessonFmt(x);
+      return y;
+    });
+    var t0 = localToday(), mon = mondayOf(t0);
+    function weekRows(ws){
+      var we = addDays(ws, 7);
+      return rows.filter(function(x){ return x.day >= ws && x.day < we; });
+    }
+
+    /* ——— часы по неделям ——— */
+    var p1 = el("div","panel");
+    p1.appendChild(el("h3", null, "Часы в неделю"));
+    var cur = weekRows(mon), prev = weekRows(addDays(mon, -7)), next = weekRows(addDays(mon, 7));
+    var done = cur.filter(function(x){ return x.past; });
+    var past8 = [];
+    for(var i = 1; i <= 8; i++){
+      var wr = weekRows(addDays(mon, -7 * i));
+      if(wr.length) past8.push(sumMin(wr));
+    }
+    var avg = past8.length ? past8.reduce(function(a, b){ return a + b; }, 0) / past8.length : 0;
+    var stats = el("div","stats");
+    stats.appendChild(statTile("Эта неделя", hrs(sumMin(cur)) + " ч",
+      "проведено " + hrs(sumMin(done)) + " ч, впереди " + hrs(sumMin(cur) - sumMin(done)) + " ч · " +
+      cur.length + " " + plural(cur.length, "занятие", "занятия", "занятий")));
+    stats.appendChild(statTile("Прошлая неделя", hrs(sumMin(prev)) + " ч",
+      prev.length + " " + plural(prev.length, "занятие", "занятия", "занятий")));
+    stats.appendChild(statTile("В среднем", hrs(avg) + " ч",
+      past8.length ? "за " + past8.length + " " + plural(past8.length, "прошлую неделю", "прошлые недели", "прошлых недель") +
+                     (past8.length < 8 ? " — раньше в календаре пусто" : "")
+                   : "прошлых недель в календаре нет"));
+    stats.appendChild(statTile("Следующая неделя", hrs(sumMin(next)) + " ч", "по календарю, план"));
+    p1.appendChild(stats);
+
+    var t1 = tableIn(p1);
+    var h1 = document.createElement("thead"), hr1 = document.createElement("tr");
+    hr1.appendChild(el("th", null, "Неделя"));
+    hr1.appendChild(numTh("Занятий"));
+    hr1.appendChild(numTh("Часов"));
+    FMTS.forEach(function(f){ hr1.appendChild(numTh(f.n)); });
+    h1.appendChild(hr1); t1.appendChild(h1);
+    var b1 = document.createElement("tbody");
+    for(var k = 1; k >= -8; k--){
+      var ws = addDays(mon, 7 * k), list = weekRows(ws);
+      var tr = document.createElement("tr");
+      if(k === 0) tr.className = "now";
+      if(k === 1) tr.className = "plan";
+      tr.appendChild(el("td", null, weekLabel(ws) + (k === 0 ? " · идёт" : k === 1 ? " · план" : "")));
+      tr.appendChild(numTd(String(list.length)));
+      tr.appendChild(numTd(hrs(sumMin(list))));
+      FMTS.forEach(function(f){
+        var m = sumMin(list.filter(function(x){ return x.fmt === f.k; }));
+        tr.appendChild(numTd(m ? hrs(m) : "—"));
+      });
+      b1.appendChild(tr);
+    }
+    t1.appendChild(b1);
+    w.appendChild(p1);
+
+    /* ——— деньги на час ——— */
+    var ym = t0.slice(0, 7);
+    var months = [ymAdd(ym, -2), ymAdd(ym, -1), ym];
+    if(months.indexOf(LOAD.month) < 0) LOAD.month = ymAdd(ym, -1);
+    var p2 = el("div","panel");
+    p2.appendChild(el("h3", null, "Выручка на час"));
+    var bar = el("div","bar"), seg = el("div","seg");
+    months.forEach(function(m){
+      var b = el("button", null, cap(monthName(m)));
+      b.setAttribute("aria-pressed", LOAD.month === m ? "true" : "false");
+      b.addEventListener("click", function(){ LOAD.month = m; render(); });
+      seg.appendChild(b);
+    });
+    bar.appendChild(seg);
+    p2.appendChild(bar);
+    var held = rows.filter(function(x){ return x.past && x.day.slice(0, 7) === LOAD.month; });
+    var pays = DATA["Оплаты"].filter(function(o){
+      return String(o["дата"] || "").trim().slice(0, 7) === LOAD.month;
+    });
+    var t2 = tableIn(p2);
+    t2.appendChild(head(["Формат", "Часов проведено", "Оплат пришло", "На час"]));
+    [].forEach.call(t2.querySelectorAll("th"), function(th, i){ if(i) th.className = "num"; });
+    var b2 = document.createElement("tbody");
+    var allMin = 0, allSum = 0;
+    FMTS.forEach(function(f){
+      var m = sumMin(held.filter(function(x){ return x.fmt === f.k; }));
+      var sum = pays.filter(function(o){ return payFmt(o) === f.k; })
+                    .reduce(function(a, o){ return a + num(o["сумма"]); }, 0);
+      allMin += m; allSum += sum;
+      if(!m && !sum) return;
+      var tr = document.createElement("tr");
+      tr.appendChild(el("td", null, f.n));
+      tr.appendChild(numTd(m ? hrs(m) : "—"));
+      tr.appendChild(numTd(sum ? rub(sum) : "—"));
+      tr.appendChild(numTd(m && sum && f.k !== "—" ? rub(sum / (m / 60)) : "—"));
+      b2.appendChild(tr);
+    });
+    var tt = document.createElement("tr");
+    tt.className = "now";
+    tt.appendChild(el("td", null, "Всего"));
+    tt.appendChild(numTd(allMin ? hrs(allMin) : "—"));
+    tt.appendChild(numTd(allSum ? rub(allSum) : "—"));
+    tt.appendChild(numTd(allMin && allSum ? rub(allSum / (allMin / 60)) : "—"));
+    b2.appendChild(tt);
+    t2.appendChild(b2);
+    var notes = ["Оплаты считаются по дате оплаты: абонемент, оплаченный в конце месяца, попадает в месяц оплаты."];
+    if(LOAD.month === ym) notes.push("Месяц ещё идёт: деньги обычно приходят в начале, а часы копятся до конца — на час сейчас выходит больше, чем будет.");
+    var nod = DATA["Оплаты"].filter(function(o){ return !String(o["дата"] || "").trim(); });
+    if(nod.length) notes.push("Без даты " + nod.length + " " + plural(nod.length, "оплата", "оплаты", "оплат") + " на " +
+      rub(nod.reduce(function(a, o){ return a + num(o["сумма"]); }, 0)) + " — " +
+      plural(nod.length, "не вошла", "не вошли", "не вошли") + " ни в один месяц. Дата ставится на вкладке «Оплаты».");
+    var unk = pays.filter(function(o){ return payFmt(o) === "—"; });
+    if(unk.length) notes.push("Не разнесены по формату: " + unk.map(function(o){ return o["ученик"]; })
+      .filter(function(n, i, a){ return a.indexOf(n) === i; }).join(", ") +
+      " — у ученика несколько форматов или нет направлений, а оплата сделана не из счёта.");
+    notes.forEach(function(n){ p2.appendChild(el("p","col-hint", n)); });
+    w.appendChild(p2);
+
+    /* ——— заполненность групп ——— */
+    var p3 = el("div","panel");
+    p3.appendChild(el("h3", null, "Заполненность групп"));
+    var last4 = rows.filter(function(x){ return x.day >= addDays(mon, -28) && x.day < mon; });
+    var gl = DATA["Группы"].map(function(g){
+      var name = String(g["название"] || "").trim();
+      var n = pupilsOf(name).length, seats = seatsOf(g);
+      var m = sumMin(last4.filter(function(x){ return x.kind === "группа" && x.name === name; }));
+      return {name:name, n:n, seats:seats, fill:seats ? n / seats : null, week:m / 4,
+              fmt:String(g["формат"] || "").trim() || "группа"};
+    }).filter(function(g){ return g.name; })
+      .sort(function(a, b){
+        if(a.fill === null) return 1;
+        if(b.fill === null) return -1;
+        return a.fill - b.fill;
+      });
+    var free = gl.filter(function(g){ return g.fmt === "группа" && g.seats > g.n; })
+                 .reduce(function(a, g){ return a + g.seats - g.n; }, 0);
+    p3.appendChild(el("p","col-hint", "Свободных мест в группах: " + free +
+      ". Сверху самые пустые — туда в первую очередь вести новых учеников."));
+    var t3 = tableIn(p3);
+    t3.appendChild(head(["Группа", "Учеников", "Мест", "Заполнено", "Часов в неделю"]));
+    [].forEach.call(t3.querySelectorAll("th"), function(th, i){ if(i) th.className = "num"; });
+    var b3 = document.createElement("tbody");
+    gl.forEach(function(g){
+      var tr = document.createElement("tr");
+      tr.appendChild(el("td", null, g.name + (g.fmt !== "группа" ? " · " + g.fmt : "")));
+      tr.appendChild(numTd(String(g.n)));
+      tr.appendChild(numTd(g.seats ? String(g.seats) : "—"));
+      var fc = numTd(g.fill === null ? "—" : Math.round(g.fill * 100) + "%");
+      if(g.fill !== null && (g.fill < 0.5 || g.fill > 1)){
+        var pw2 = el("span","pill pill-warn", g.fill > 1 ? "больше мест" : (g.n ? "полупустая" : "пустая"));
+        pw2.style.marginLeft = "8px";
+        fc.appendChild(pw2);
+      }
+      tr.appendChild(fc);
+      tr.appendChild(numTd(g.week ? hrs(g.week) : "нет в календаре"));
+      b3.appendChild(tr);
+    });
+    t3.appendChild(b3);
+    p3.appendChild(el("p","col-hint", "Часы — среднее за четыре прошлые недели. «Нет в календаре» — событие " +
+      "не привязалось к группе: проверь дни и время группы или название события."));
+    w.appendChild(p3);
+
+    /* ——— не привязались ——— */
+    var loose = rows.filter(function(x){ return x.fmt === "—" && x.day >= addDays(mon, -28) && x.day < addDays(mon, 14); });
+    if(loose.length){
+      var p4 = el("div","panel");
+      p4.appendChild(el("h3", null, "Не привязались к базе"));
+      var by = {}, order = [];
+      loose.forEach(function(x){
+        if(!by[x.title]){ by[x.title] = {n:0, slots:[]}; order.push(x.title); }
+        by[x.title].n++;
+        var sl = wdOf(x.day) + " " + x.time;
+        if(by[x.title].slots.indexOf(sl) < 0) by[x.title].slots.push(sl);
+      });
+      order.forEach(function(tl){
+        var r = el("p", null, "«" + tl + "» — " + by[tl].slots.join(", ") + " · " + by[tl].n + " " +
+          plural(by[tl].n, "раз", "раза", "раз") + " за 6 недель");
+        p4.appendChild(r);
+      });
+      p4.appendChild(el("p","col-hint", "Эти часы считаются в «Не привязано». Впиши эти дни и время ученику " +
+        "или группе в кабинете — занятие привяжется и уйдёт в свой формат."));
+      w.appendChild(p4);
+    }
+
+    var p5 = el("div","panel");
+    p5.appendChild(el("h3", null, "Как считается"));
+    ["Занятия — события календаря «Основное расписание». Отменённое занятие удаляй из календаря, тогда оно не считается.",
+     "События на весь день, окна «Свободно» и личные дела (к базе не привязались и на урок не похожи) пропускаются.",
+     "Прошедшее событие считается проведённым, будущее — планом. Длительность — по времени события.",
+     "Группа находится по дню и времени, индивидуальное — по дням в направлении ученика, иначе по названию события."
+    ].forEach(function(n){ p5.appendChild(el("p","col-hint", n)); });
+    w.appendChild(p5);
   }
 
   /* ——— старт ——— */
