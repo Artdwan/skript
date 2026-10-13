@@ -284,6 +284,9 @@
   /* окна для пробного: времени бывает много, оно должно переноситься, а не вылезать */
   #trialRows .row{display:grid;grid-template-columns:minmax(0,auto) minmax(0,1fr);gap:10px;align-items:baseline}
   #trialRows .row span:last-child{white-space:normal;text-align:right;word-spacing:.15em}
+  #trialRows .row.row-head{margin-top:6px;font-weight:600}
+  .slot-sub{margin-top:12px;font-size:13px;color:var(--muted)}
+  .slot-sub b{color:var(--ink);font-weight:600}
   .panel p{margin:0;font-size:14px;color:var(--muted)}
   .panel ul{margin:0;padding-left:18px;font-size:14px;display:grid;gap:5px}
   .panel li::marker{color:var(--accent)}
@@ -841,12 +844,26 @@
   // сводка «Окна для пробного» в правой колонке всегда строится из живого списка окон
   function trialFromSlots(){
     if(!SLOTS.length) return;
-    var byDay = {}, order = [];
-    SLOTS.forEach(function(s){
-      if(!byDay[s.day]){ byDay[s.day] = []; order.push(s.day); }
-      byDay[s.day].push(s.time);
-    });
-    TRIAL = order.map(function(d){ return {day: d, slots: byDay[d].join(", ")}; });
+    function rows(list){
+      var byDay = {}, order = [];
+      list.forEach(function(s){
+        if(!byDay[s.day]){ byDay[s.day] = []; order.push(s.day); }
+        byDay[s.day].push(s.time);
+      });
+      return order.map(function(d){ return {day: d, slots: byDay[d].join(", ")}; });
+    }
+    var sh = SLOTS.filter(isShift2);
+    TRIAL = rows(SLOTS.filter(function(s){ return !isShift2(s); }));
+    if(sh.length) TRIAL = TRIAL.concat([{day:SHIFT2_LABEL, slots:"", head:true}], rows(sh));
+  }
+  // окна для второй смены: будни, начало до 13:00
+  var SHIFT2_BEFORE = "13:00";
+  var SHIFT2_LABEL = "Для второй смены";
+  function isShift2(s){
+    var d = new Date(s.id);
+    if(isNaN(d.getTime())) return false;
+    var wd = d.toLocaleDateString("en-US", {weekday:"short", timeZone:TZ});
+    return wd !== "Sat" && wd !== "Sun" && String(s.time) < SHIFT2_BEFORE;
   }
   // ——— записанные пробные ———
   var BOOKINGS = [];
@@ -1608,6 +1625,20 @@
       sr.appendChild(row);
     });
     return sr;
+  }
+  function slotGridSplit(list, cellFn){
+    var main = list.filter(function(s){ return !isShift2(s); });
+    var sh = list.filter(isShift2);
+    var wrap = document.createElement("div");
+    if(main.length || !sh.length) wrap.appendChild(slotGrid(main, cellFn));
+    if(sh.length){
+      var lab = document.createElement("div");
+      lab.className = "slot-sub";
+      lab.innerHTML = "<b>Для второй смены</b> - будни до " + SHIFT2_BEFORE + ". Предлагать, только если ребёнок учится во вторую смену.";
+      wrap.appendChild(lab);
+      wrap.appendChild(slotGrid(sh, cellFn));
+    }
+    return wrap;
   }
   function slotCell(sl){
     var cell = document.createElement("span");
@@ -2472,7 +2503,7 @@
       }
       sw.appendChild(sl);
 
-      sw.appendChild(slotGrid(SLOTS, slotCell));
+      sw.appendChild(slotGridSplit(SLOTS, slotCell));
 
       var hint2 = document.createElement("div");
       hint2.className = "slot-hint";
@@ -2493,7 +2524,7 @@
                             : "Какое окно выбрал родитель";
       cw.appendChild(cl);
       var offered = picked.map(slotById).filter(Boolean);
-      cw.appendChild(slotGrid(offered.length ? offered : SLOTS, confirmCell));
+      cw.appendChild(slotGridSplit(offered.length ? offered : SLOTS, confirmCell));
       var cHint = document.createElement("div");
       cHint.className = "slot-hint";
       cHint.textContent = offered.length
@@ -2775,6 +2806,7 @@
     TRIAL.forEach(function(t){
       var row = document.createElement("div");
       row.className = "row";
+      if(t.head) row.className = "row row-head";
       var a = document.createElement("span"); a.textContent = t.day;
       var b = document.createElement("span"); b.textContent = t.slots;
       row.appendChild(a); row.appendChild(b);
@@ -2843,9 +2875,7 @@
           meet: meet
         });
       });
-      TRIAL = order.map(function(k){
-        return {day: k.charAt(0).toUpperCase() + k.slice(1), slots: byDay[k].join(", ")};
-      });
+      trialFromSlots();
       DATA_UPDATED = "календаря, " + new Date().toLocaleTimeString("ru-RU", {hour:"2-digit", minute:"2-digit", timeZone:TZ});
       picked = [];
       renderTrial();
