@@ -153,6 +153,8 @@
   .opt:hover{border-color:var(--accent);background:var(--accent-soft)}
   .opt .arrow{color:var(--accent);font-family:var(--mono);font-size:13px}
   .opt.quiet{color:var(--muted)}
+  .opt.off,.opt.off:hover{opacity:.45;cursor:default;border-color:var(--line);background:var(--card)}
+  .opt.off .arrow{color:var(--muted)}
 
   /* ——— класс ——— */
   .picker{display:grid;gap:8px}
@@ -1779,13 +1781,13 @@
       title:"С чего начинается переписка?",
       hint:"Отвечаем в течение часа. Если сообщение пришло ночью — первым делом утром.",
       next:[
-        {t:"Написал «РЕПЕТИТОР» или просто поздоровался", to:"first"},
+        {t:"Написал «РЕПЕТИТОР» или просто поздоровался", to:"first", off:true},
         {t:"Сразу назвал класс и предмет", to:"chooseClass"},
         {t:"Спрашивает цену, класс не назвал", to:"priceFirst"},
         {t:"Писал нам раньше, в переписке есть история", to:"back2"},
         {t:"Нужен другой предмет: русский, английский, физика", to:"otherSubject"},
         {t:"«Вы в Беларуси?», «где находитесь?», «есть офлайн?»", to:"where"},
-        {t:"«15 рублей — это пробное?»", to:"fifteen"}
+        {t:"«15 рублей — это пробное?»", to:"fifteen", off:true}
       ]
     },
 
@@ -2621,15 +2623,17 @@
       br.appendChild(lb);
       var opts = document.createElement("div");
       opts.className = "opts";
-      n.next.forEach(function(o){
+      // off:true — ситуация неактивна: видна внизу списка, не нажимается, тексты в файле остаются
+      n.next.filter(function(o){ return !o.off; }).concat(n.next.filter(function(o){ return o.off; })).forEach(function(o){
         var to = route(o);
         if(!to) return;
         var b = document.createElement("button");
         b.type = "button";
-        b.className = "opt" + (o.quiet ? " quiet" : "");
+        b.className = "opt" + (o.quiet ? " quiet" : "") + (o.off ? " off" : "");
         var span = document.createElement("span"); span.textContent = o.t;
-        var ar = document.createElement("span"); ar.className = "arrow"; ar.textContent = "→";
+        var ar = document.createElement("span"); ar.className = "arrow"; ar.textContent = o.off ? "неактивно" : "→";
         b.appendChild(span); b.appendChild(ar);
+        if(o.off){ b.disabled = true; opts.appendChild(b); return; }
         b.addEventListener("click", function(){
           if(to === "start"){ path = ["start"]; resetClient(); } else { path.push(to); }
           render();
