@@ -289,6 +289,9 @@
   #trialRows .row span:last-child{white-space:normal;text-align:right;word-spacing:.15em}
   #trialRows .row.row-head{margin-top:6px;font-weight:600}
   .slot-sub{margin-top:12px;font-size:13px;color:var(--muted)}
+  .slot-teacher{margin-top:14px;padding-top:10px;border-top:1px solid var(--line);font-size:14px;font-weight:600;color:var(--ink)}
+  .slot-teacher:first-child{margin-top:4px;padding-top:0;border-top:0}
+  .slot-teacher span{font-weight:400;color:var(--muted)}
   .slot-sub b{color:var(--ink);font-weight:600}
   .panel p{margin:0;font-size:14px;color:var(--muted)}
   .panel ul{margin:0;padding-left:18px;font-size:14px;display:grid;gap:5px}
@@ -777,12 +780,14 @@
         + "Класс: " + klassStr() + "\n"
         + "Было: " + moveFrom.dayPlain + ", " + moveFrom.time + "\n"
         + "Стало: " + (s ? s.dayPlain + ", " + s.time : "-") + "\n"
+        + "Окно: " + slotTeacher(s) + "\n"
         + "Ссылка: " + ((s && s.meet) ? s.meet : (MEET_FALLBACK || "-"));
     }
     return "Пробное записано\n"
       + "Instagram: " + (bookInsta || "-") + "\n"
       + "Класс: " + klassStr() + "\n"
       + "Когда: " + (s ? s.dayPlain + ", " + s.time : "-") + "\n"
+      + "Окно: " + slotTeacher(s) + "\n"
       + "Ссылка: " + ((s && s.meet) ? s.meet : (MEET_FALLBACK || "-"));
   }
   function sendBooking(){
@@ -791,7 +796,7 @@
     var summary = bookSummary();
     var payload = {
       insta: bookInsta || "",
-      klass: klassStr(),
+      klass: klassStr() + (s.who === "dasha" ? " · Даша" : ""),
       when: s.dayPlain + ", " + s.time,
       link: s.meet || MEET_FALLBACK || "",
       start: s.id,
@@ -807,7 +812,7 @@
       BOOKINGS.push({
         id: s.id, day: s.day, dayFull: s.dayFull, dayPlain: s.dayPlain,
         time: s.time, meet: s.meet, insta: bookInsta || "",
-        klass: klassStr()
+        klass: klassStr() + (s.who === "dasha" ? " · Даша" : "")
       });
       BOOKINGS.sort(function(x, y){ return x.id < y.id ? -1 : 1; });
       dropBookedFromSlots();
@@ -851,19 +856,48 @@
       var byDay = {}, order = [];
       list.forEach(function(s){
         if(!byDay[s.day]){ byDay[s.day] = []; order.push(s.day); }
-        byDay[s.day].push(s.time + (s.who === "dasha" ? " (Даша)" : ""));
+        byDay[s.day].push(s.time);
       });
       return order.map(function(d){ return {day: d, slots: byDay[d].join(", ")}; });
     }
-    var sh = SLOTS.filter(isShift2);
-    TRIAL = rows(SLOTS.filter(function(s){ return !isShift2(s); }));
+    var art = SLOTS.filter(function(s){ return s.who !== "dasha"; });
+    var dasha = SLOTS.filter(function(s){ return s.who === "dasha"; });
+    var sh = art.filter(isShift2);
+    TRIAL = [{day:"Артур", slots:"", head:true}].concat(rows(art.filter(function(s){ return !isShift2(s); })));
     if(sh.length) TRIAL = TRIAL.concat([{day:SHIFT2_LABEL, slots:"", head:true}], rows(sh));
+    if(dasha.length) TRIAL = TRIAL.concat([{day:"Даша", slots:"", head:true}], rows(dasha));
   }
   // индивидуальные и пары записываем в окна «Свободно (Даша)», группы - в обычные «Свободно для пробного»
   function dashaPool(){ return isInd() && !inIndGroup(); }
-  function poolSlots(){
-    var d = dashaPool();
-    return SLOTS.filter(function(s){ return (s.who === "dasha") === d; });
+  function slotTeacher(s){ return s && s.who === "dasha" ? "Даша" : "Артур"; }
+  // окна разбиты на Артура и Дашу; первым идёт тот, кого обычно ставим в этой ветке, но выбрать можно любое
+  function slotsByTeacher(list, cellFn, shift2Only){
+    var wrap = document.createElement("div");
+    var order = dashaPool() ? ["dasha", ""] : ["", "dasha"];
+    order.forEach(function(who, idx){
+      var sub = list.filter(function(s){ return (s.who || "") === who; });
+      if(shift2Only) sub = sub.filter(isShift2);
+      var h = document.createElement("div");
+      h.className = "slot-teacher";
+      h.textContent = who === "dasha" ? "Окна Даши" : "Окна Артура";
+      if(idx === 0){
+        var hs = document.createElement("span");
+        hs.textContent = " · в первую очередь";
+        h.appendChild(hs);
+      }
+      wrap.appendChild(h);
+      if(!sub.length){
+        var e = document.createElement("div");
+        e.className = "slot-empty";
+        e.textContent = shift2Only
+          ? "Дневных окон нет (будни до " + SHIFT2_BEFORE + ")"
+          : (who === "dasha" ? "Свободных окон нет - поставьте в календарь «Свободно (Даша)»" : "Свободных окон нет - поставьте в календарь «Свободно для пробного»");
+        wrap.appendChild(e);
+        return;
+      }
+      wrap.appendChild(shift2Only ? slotGrid(sub, cellFn) : slotGridSplit(sub, cellFn));
+    });
+    return wrap;
   }
   // окна для второй смены: будни, начало до 13:00
   var SHIFT2_BEFORE = "13:00";
@@ -918,7 +952,7 @@
     // окно снова свободно - возвращаем его в список, не дожидаясь календаря
     if(!slotById(b.id)){
       SLOTS.push({id:b.id, day:b.day, dayFull:b.dayFull, dayPlain:b.dayPlain, time:b.time, meet:b.meet,
-                  who: String(b.klass || "").indexOf(IND_MARK.trim()) >= 0 ? "dasha" : ""});
+                  who: /даш/i.test(String(b.klass || "")) ? "dasha" : ""});
       SLOTS.sort(function(x, y){ return x.id < y.id ? -1 : 1; });
     }
     delete snapSlots[b.id];
@@ -960,7 +994,7 @@
       var ms = Date.parse(s.id);
       if(isNaN(ms)) return;
       var d = new Date(ms);
-      if(sameMonth(d, y, m)){ (free[d.getDate()] = free[d.getDate()] || []).push(s.time); }
+      if(sameMonth(d, y, m)){ (free[d.getDate()] = free[d.getDate()] || []).push(s.time + (s.who === "dasha" ? " (Даша)" : "")); }
     });
     BOOKINGS.forEach(function(b){
       var ms = Date.parse(b.id);
@@ -1690,7 +1724,7 @@
     b.type = "button";
     var cur = confirmedSlot();
     b.className = "chip slot-chip";
-    b.textContent = sl.time + (sl.meet ? "" : " (без ссылки)");
+    b.textContent = sl.time + " · " + slotTeacher(sl) + (sl.meet ? "" : " (без ссылки)");
     b.setAttribute("aria-pressed", (cur && cur.id === sl.id) ? "true" : "false");
     b.title = sl.meet ? sl.meet : "У этого окна нет ссылки Meet - добавьте её в календаре";
     b.addEventListener("click", function(){ pickConfirmed(sl.id); });
@@ -2767,9 +2801,8 @@
       sl.className = "branch-label slot-head";
       var slText = document.createElement("span");
       var nUsed = usedCount();
-      var poolName = dashaPool() ? "Окна Даши для пробного" : "Окна для пробного";
-      slText.textContent = (picked.length ? poolName + " - в тексте " + picked.length + " из 2"
-                                          : poolName + " - нажмите два варианта")
+      slText.textContent = (picked.length ? "Окна для пробного - в тексте " + picked.length + " из 2"
+                                          : "Окна для пробного - нажмите два варианта")
                          + (nUsed ? " · уже предлагали: " + nUsed : "");
       sl.appendChild(slText);
       if(nUsed){
@@ -2783,24 +2816,7 @@
       }
       sw.appendChild(sl);
 
-      var pool = poolSlots();
-      if(!pool.length){
-        var e0 = document.createElement("div");
-        e0.className = "slot-empty";
-        e0.textContent = dashaPool()
-          ? "Свободных окон Даши нет - поставьте в календарь события «Свободно (Даша)» или спросите Артура"
-          : "Свободных окон нет - поставьте их в календарь или спросите Артура";
-        sw.appendChild(e0);
-      } else if(n.shift2Only){
-        var day2 = pool.filter(isShift2);
-        if(day2.length) sw.appendChild(slotGrid(day2, slotCell));
-        else {
-          var e2 = document.createElement("div");
-          e2.className = "slot-empty";
-          e2.textContent = "Дневных окон нет - поставьте в календарь окна в будни до " + SHIFT2_BEFORE + " или спросите Артура";
-          sw.appendChild(e2);
-        }
-      } else sw.appendChild(slotGridSplit(pool, slotCell));
+      sw.appendChild(slotsByTeacher(SLOTS, slotCell, !!n.shift2Only));
 
       var hint2 = document.createElement("div");
       hint2.className = "slot-hint";
@@ -2817,11 +2833,11 @@
       var cl = document.createElement("div");
       cl.className = "branch-label";
       var cSel = confirmedSlot();
-      cl.textContent = cSel ? "Родитель выбрал: " + cSel.dayPlain + ", " + cSel.time
+      cl.textContent = cSel ? "Родитель выбрал: " + cSel.dayPlain + ", " + cSel.time + " (" + slotTeacher(cSel) + ")"
                             : "Какое окно выбрал родитель";
       cw.appendChild(cl);
       var offered = picked.map(slotById).filter(Boolean);
-      cw.appendChild(slotGridSplit(offered.length ? offered : poolSlots(), confirmCell));
+      cw.appendChild(offered.length ? slotGridSplit(offered, confirmCell) : slotsByTeacher(SLOTS, confirmCell, false));
       var cHint = document.createElement("div");
       cHint.className = "slot-hint";
       cHint.textContent = offered.length
