@@ -1531,6 +1531,7 @@
     moveFrom = null;
     cancelFrom = null;
     indCard = false;
+    chemCard = false;
   }
 
   // ——— ответ после отмены пробного ———
@@ -1539,6 +1540,7 @@
     cancelFrom = b;
     moveFrom = null;
     indCard = IND_RE.test(String(b.klass || ""));
+    chemCard = CHEM_RE.test(String(b.klass || ""));
     bookInsta = b.insta || "";
     bookState = "";
     picked = [];
@@ -1574,6 +1576,7 @@
   function startMove(b){
     moveFrom = b;
     indCard = IND_RE.test(String(b.klass || ""));
+    chemCard = CHEM_RE.test(String(b.klass || ""));
     bookInsta = b.insta || "";
     bookState = "";
     picked = [];
@@ -1778,7 +1781,7 @@
 
   function num(n){
     var s = (Math.round(n*100)/100).toFixed(2).replace(".", ",");
-    return s.replace(/,00$/, "");
+    return s.replace(/,00$/, "").replace(/,(\d)0$/, ",$1");
   }
   function c(){ return CLASSES[current]; }
   function half(){ return num(c().price/2); }
@@ -2266,13 +2269,23 @@
     return indCard;
   }
   function route(o){
-    if(o.to === "start" || o.group || !isInd()) return o.to;
-    if(IND_HIDE[o.to]) return null;
-    return IND_ALIAS[o.to] || o.to;
+    if(o.to === "start" || o.group) return o.to;
+    if(isInd()){
+      if(IND_HIDE[o.to]) return null;
+      return IND_ALIAS[o.to] || o.to;
+    }
+    if(isChem()){
+      if(CHEM_HIDE[o.to]) return null;
+      // класс ещё не выбран (или выбран не по химии) - сначала спрашиваем класс; 11 класс - без группы
+      if(o.to === "offer" && c().subj !== "Химия") return "chemClass";
+      if(o.to === "offer" && c().empty) return "indOffer";
+      return CHEM_ALIAS[o.to] || o.to;
+    }
+    return o.to;
   }
   function klassStr(){
     if(inIndGroup()) return c().subj + ", " + c().label + " · группа " + indGroupPrice() + " р, реклама индивов";
-    return c().subj + ", " + c().label + (isInd() ? IND_MARK : "");
+    return c().subj + ", " + c().label + (isInd() ? IND_MARK : (isChem() ? CHEM_MARK : ""));
   }
   // лид с рекламы индивов, которому предложили группу
   function inIndGroup(){
@@ -2378,7 +2391,7 @@
   };
 
   // цену уже назвали в «Спрашивает цену, класс не назвал»
-  function priceSent(){ return path.indexOf("indPriceFirst") >= 0; }
+  function priceSent(){ return path.indexOf("indPriceFirst") >= 0 || path.indexOf("chemPriceFirst") >= 0; }
 
   var IND_TIME_NEXT = [
     {t:"«Да, записывайте на диагностику»", to:"book"},
@@ -2443,6 +2456,200 @@
     msgs:function(){ return indGroupMsgs("Понял.\n\nЕсть ещё вариант со своим расписанием -"); },
     note:indGroupNote,
     next:IND_GROUP_NEXT
+  };
+
+  // ——— ветка «реклама химии»: группа, пара и индивидуально сразу ———
+  // Цены — из справочника фактов: группы химии 105/130 в месяц, пара 35, индивидуально 45. Скидку 50% этим лидам не называем.
+  var CHEM_MARK = " · реклама химии";        // уходит в запись пробного, календарь и телеграм
+  var CHEM_RE = /реклама химии/i;
+  var chemCard = false;                      // ветка известна по карточке записанного пробного
+  var CHEM_ALIAS = {offer:"chemOffer", chooseClass:"chemClass", expensive:"chemExpensive", time:"chemTime"};
+  var CHEM_HIDE = {individual:1};
+  function isChem(){
+    for(var i = path.length - 1; i >= 0; i--){
+      var nd = NODES[path[i]];
+      if(!nd) continue;
+      if(nd.chem) return true;
+      if(nd.grp || nd.ind) return false;
+    }
+    return chemCard;
+  }
+  function chemPriceSent(){ return path.indexOf("chemPriceFirst") >= 0; }
+  function chemSched(){
+    var a = schedLines();
+    return a.length ? a.join(" или ") : "<дни и время>";
+  }
+
+  NODES.start.next.splice(1, 0, {t:"Пришёл с рекламы химии", to:"chemFirst"});
+
+  NODES.chemFirst = {
+    chem:true,
+    status:"новый → ответил",
+    stage:"Химия · шаг 1",
+    title:"Первый ответ",
+    hint:"Реклама по химии: предлагаем сразу три формата - группу, пару и индивидуально. Предмет уже известен, спрашиваем только класс. Если класс назвали сразу - жмите «Назвал класс».",
+    msgs:["Добрый день!\n\nЗанимаемся онлайн по химии - в группе, в паре или индивидуально.\nНачинаем с бесплатной диагностики.\n\nПодскажите, в каком классе учится ребёнок - пришлю стоимость и расписание."],
+    next:[
+      {t:"Назвал класс", to:"chemClass"},
+      {t:"Спрашивает цену, класс не назвал", to:"chemPriceFirst"},
+      {t:"Нужна математика", to:"chooseClass", group:true},
+      {t:"Молчит сутки", to:"rem1"}
+    ]
+  };
+
+  NODES.chemPriceFirst = {
+    chem:true,
+    status:"новый → ответил",
+    stage:"Химия · шаг 1",
+    title:"Спрашивает цену, класс не назвал",
+    hint:"Называем все три цены сразу и спрашиваем класс. В предложении цены второй раз не повторятся.",
+    msgs:["Добрый день!\n\nХимия онлайн, три формата:\n- группа до 7 учеников - 105 рублей в месяц для 7 класса, 130 рублей для 8-10 класса\n- в паре - " + PAIR.price + " рублей за занятие с каждого ученика, " + PAIR.min + " минут\n- индивидуально - " + IND.price + " рублей за занятие, " + IND.min + " минут\n\nНачинаем с бесплатной диагностики.\n\nПодскажите, в каком классе учится ребёнок?"],
+    note:"Для 11 класса группы по химии нет - после ответа выберите 11 класс, откроется предложение только с парой и индивидуальными.",
+    next:[
+      {t:"Назвал класс", to:"chemClass"},
+      {t:"Молчит сутки", to:"rem1"}
+    ]
+  };
+
+  NODES.chemClass = {
+    chem:true,
+    status:"ответил",
+    stage:"Химия · шаг 2",
+    title:"Какой класс назвал клиент?",
+    hint:"7-10 класс - откроется предложение с тремя форматами. 11 класс - групп нет, откроются только пара и индивидуально.",
+    classPick:true,
+    subjOnly:"Химия",
+    noEmpty:true,
+    pickTo:function(key){ return CLASSES[key].empty ? "indOffer" : "chemOffer"; }
+  };
+
+  NODES.chemOffer = {
+    chem:true,
+    slots:true,
+    usesClass:true,
+    status:"ответил",
+    stage:"Химия · шаг 2",
+    title:"Предложение: группа, пара, индивидуально",
+    hint:function(){
+      return chemPriceSent()
+        ? "Цены уже назвали - здесь два сообщения: форматы и диагностика. Нажмите два окна - они встанут во второе сообщение."
+        : "Три коротких сообщения подряд: форматы, цены, диагностика. Расписание группы подставилось по классу; нажмите два окна - они встанут в третье сообщение.";
+    },
+    msgs:function(){
+      var k = c();
+      if(k.empty) return [];
+      var m = [
+        "Для " + k.full + " по химии есть три формата:\n\n- группа до 7 учеников - " + k.times + " по " + k.dur + " минут, " + chemSched() + "\n- в паре - " + PAIR.min + " минут, с учеником того же класса, второго ученика подбираем мы\n- индивидуально - " + IND.min + " минут",
+        "Группа - " + k.price + " рублей в месяц, это " + k.lo + "-" + k.hi + " занятий.\nВ паре - " + PAIR.price + " рублей за занятие с каждого ученика.\nИндивидуально - " + IND.price + " рублей за занятие.",
+        "Начнём с бесплатной диагностики на 30-40 минут: посмотрю уровень и подскажу, какой формат подойдёт.\n\nУдобно {{день1}} в {{время1}} или {{день2}} в {{время2}}?"
+      ];
+      if(chemPriceSent()) m.splice(1, 1);
+      return m;
+    },
+    note:function(){
+      var s = "Свободные места на пары и индивидуальные в скрипт не заведены: перед отправкой спросите Артура, есть ли место. Если мест нет - уберите из сообщений строки про пару и индивидуально. Преподавателя не называем. Скидку 50% на группу этим лидам не называем.";
+      if(!schedLines().length) s = "Расписания группы " + c().full + " в скрипте нет - впишите его в «Справочнике» или спросите Артура. " + s;
+      return s;
+    },
+    next:[
+      {t:"«Да, записывайте на диагностику»", to:"book"},
+      {t:"«Что лучше выбрать?»", to:"chemWhich"},
+      {t:"«Дорого»", to:"chemExpensive"},
+      {t:"Не подходит время группы", to:"chemTime"},
+      {t:"Не подошло время диагностики", to:"chemDiagTime"},
+      {t:"Учится во вторую смену", to:"chemShift2"},
+      {t:"«Подумаем»", to:"think"},
+      {t:"«Кто будет вести?»", to:"askArtur"},
+      {t:"Другой вопрос или возражение", to:"askArtur"},
+      {t:"Прочитал и молчит", to:"rem1"},
+      {t:"Отказался", to:"refuse", quiet:true}
+    ]
+  };
+
+  NODES.chemWhich = {
+    chem:true,
+    slots:true,
+    status:"ответил",
+    stage:"Химия · возражение",
+    title:"«Что лучше выбрать?»",
+    hint:"Коротко объясняем разницу и ведём на диагностику: формат точно советует Артур после неё.",
+    msgs:["Зависит от задачи.\n\n- группа - держать уровень и не отставать по программе, самый доступный вариант\n- пара - внимания больше, чем в группе, а стоит дешевле индивидуальных\n- индивидуально - если пробелов много или нужен свой темп\n\nТочно подскажу после диагностики - на ней видно уровень.\n\nУдобно {{день1}} в {{время1}} или {{день2}} в {{время2}}?"],
+    next:[
+      {t:"«Да, записывайте на диагностику»", to:"book"},
+      {t:"«Дорого»", to:"chemExpensive"},
+      {t:"Не подходит время группы", to:"chemTime"},
+      {t:"Другой вопрос или возражение", to:"askArtur"},
+      {t:"Прочитал и молчит", to:"rem1"}
+    ]
+  };
+
+  NODES.chemExpensive = {
+    chem:true,
+    usesClass:true,
+    status:"ответил",
+    stage:"Химия · возражение",
+    title:"«Дорого» - ведём в группу",
+    hint:"Самый доступный формат - группа. Называем цену за месяц и за одно занятие, скидку 50% не называем.",
+    msgs:function(){
+      var k = c();
+      if(k.empty) return [];
+      return ["Понимаю.\n\nСамый доступный вариант - группа: " + k.price + " рублей в месяц, это " + k.lo + "-" + k.hi + " занятий, примерно " + perLesson() + " рублей за занятие.\n\nВ стоимость входит проверка домашних заданий, разбор ошибок и работа над пробелами.\n\nМогу записать на бесплатную диагностику - посмотрите, как проходит занятие, и решите."];
+    },
+    next:[
+      {t:"Согласился на диагностику", to:"book"},
+      {t:"«Понятно, спасибо за информацию»", to:"silentPrice"},
+      {t:"«Подумаем»", to:"think"},
+      {t:"Прочитал и молчит", to:"rem1"}
+    ]
+  };
+
+  NODES.chemTime = {
+    chem:true,
+    slots:true,
+    status:"ответил",
+    stage:"Химия · возражение",
+    title:"Не подходит время группы",
+    hint:"Предлагаем пару или индивидуально - там время подбирается отдельно. Перед отправкой спросите Артура, есть ли место.",
+    msgs:["Понял. Тогда удобнее пара или индивидуально - время подбираем отдельно, не по расписанию группы.\n\nВ паре - " + PAIR.price + " рублей за занятие с каждого ученика.\nИндивидуально - " + IND.price + " рублей за занятие.\n\nНачнём с диагностики - посмотрю уровень и подберём время.\n\nУдобно {{день1}} в {{время1}} или {{день2}} в {{время2}}?"],
+    note:"Если мест на пары и индивидуальные нет - не отправляйте этот текст, а спросите удобное время и запишите в лист ожидания группы (как в «Не подходит время» групповой ветки).",
+    next:[
+      {t:"«Да, записывайте на диагностику»", to:"book"},
+      {t:"Назвал своё время", to:"askArtur"},
+      {t:"Прочитал и молчит", to:"rem1"},
+      {t:"Отказался", to:"refuse", quiet:true}
+    ]
+  };
+
+  var CHEM_TIME_NEXT = [
+    {t:"«Да, записывайте на диагностику»", to:"book"},
+    {t:"Не подошло и это время", to:"chemDiagTime"},
+    {t:"Учится во вторую смену", to:"chemShift2"},
+    {t:"Назвал своё время", to:"askArtur"},
+    {t:"Прочитал и молчит", to:"rem1"},
+    {t:"Отказался", to:"refuse", quiet:true}
+  ];
+  NODES.chemDiagTime = {
+    chem:true,
+    slots:true,
+    freshSlots:true,
+    status:"ответил",
+    stage:"Химия · время",
+    title:"Не подошло время диагностики",
+    hint:"Нажмите два других окна - они встанут в сообщение. Если родитель назвал своё время, а окна нет - напишите Артуру.",
+    msgs:NODES.indDiagTime.msgs,
+    next:CHEM_TIME_NEXT
+  };
+  NODES.chemShift2 = {
+    chem:true,
+    slots:true,
+    shift2Only:true,
+    freshSlots:true,
+    status:"ответил",
+    stage:"Химия · время",
+    title:"Учится во вторую смену",
+    hint:"Здесь только дневные окна: будни до 13:00. Нажмите два - они встанут в сообщение.",
+    msgs:NODES.indShift2.msgs,
+    next:CHEM_TIME_NEXT.filter(function(o){ return o.to !== "chemShift2"; })
   };
 
   var path = ["start"];
@@ -2528,7 +2735,7 @@
       swap.type = "button";
       swap.className = "tag tag-btn";
       swap.textContent = "сменить";
-      swap.addEventListener("click", function(){ path.push(isInd() ? "indClass" : "chooseClass"); render(); });
+      swap.addEventListener("click", function(){ path.push(isInd() ? "indClass" : (isChem() ? "chemClass" : "chooseClass")); render(); });
       tags.appendChild(swap);
     }
     head.appendChild(tags);
@@ -2651,9 +2858,9 @@
       buildClassChips(pickWrap, function(key){
         current = key; groupIndex = 0;
         renderChips();
-        path.push(n.pickTo || "offer");
+        path.push((typeof n.pickTo === "function" ? n.pickTo(key) : n.pickTo) || "offer");
         render();
-      }, false, !!n.noEmpty);
+      }, false, !!n.noEmpty, n.subjOnly);
       step.appendChild(pickWrap);
     }
 
@@ -2745,8 +2952,9 @@
     }
   }
 
-  function buildClassChips(container, onPick, markCurrent, noEmpty){
+  function buildClassChips(container, onPick, markCurrent, noEmpty, subjOnly){
     ["Математика","Химия"].forEach(function(subj){
+      if(subjOnly && subj !== subjOnly) return;
       var cap = document.createElement("div");
       cap.className = "subj-caption";
       cap.textContent = subj;
