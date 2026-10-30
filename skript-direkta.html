@@ -153,6 +153,9 @@
   .opt:hover{border-color:var(--accent);background:var(--accent-soft)}
   .opt .arrow{color:var(--accent);font-family:var(--mono);font-size:13px}
   .opt.quiet{color:var(--muted)}
+  .opt.red{border-color:#D64535;color:#D64535;background:rgba(214,69,53,.10);font-weight:600}
+  .opt.red .arrow{color:#D64535}
+  .opt.red:hover{border-color:#D64535;background:rgba(214,69,53,.18)}
   .opt.off,.opt.off:hover{opacity:.45;cursor:default;border-color:var(--line);background:var(--card)}
   .opt.off .arrow{color:var(--muted)}
 
@@ -2480,7 +2483,7 @@
     return a.length ? a.join(" или ") : "<дни и время>";
   }
 
-  NODES.start.next.splice(1, 0, {t:"Пришёл с рекламы химии", to:"chemFirst"});
+  NODES.start.next.splice(1, 0, {t:"Пришёл с рекламы химии", to:"chemFirst", red:true});
 
   NODES.chemFirst = {
     chem:true,
@@ -2934,7 +2937,7 @@
         if(!to) return;
         var b = document.createElement("button");
         b.type = "button";
-        b.className = "opt" + (o.quiet ? " quiet" : "") + (o.off ? " off" : "");
+        b.className = "opt" + (o.quiet ? " quiet" : "") + (o.off ? " off" : "") + (o.red ? " red" : "");
         var span = document.createElement("span"); span.textContent = o.t;
         var ar = document.createElement("span"); ar.className = "arrow"; ar.textContent = o.off ? "неактивно" : "→";
         b.appendChild(span); b.appendChild(ar);
