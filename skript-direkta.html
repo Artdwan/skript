@@ -864,7 +864,7 @@
     var dasha = SLOTS.filter(function(s){ return s.who === "dasha"; });
     var sh = art.filter(isShift2);
     TRIAL = [{day:"Артур", slots:"", head:true}].concat(rows(art.filter(function(s){ return !isShift2(s); })));
-    if(sh.length) TRIAL = TRIAL.concat([{day:SHIFT2_LABEL, slots:"", head:true}], rows(sh));
+    if(sh.length && !holidaysSoon()) TRIAL = TRIAL.concat([{day:SHIFT2_LABEL, slots:"", head:true}], rows(sh));
     if(dasha.length) TRIAL = TRIAL.concat([{day:"Даша", slots:"", head:true}], rows(dasha));
   }
   // индивидуальные и пары записываем в окна «Свободно (Даша)», группы - в обычные «Свободно для пробного»
@@ -1690,7 +1690,7 @@
   }
   function slotGridSplit(list, cellFn){
     var main = list.filter(function(s){ return !isShift2(s); });
-    var sh = list.filter(isShift2);
+    var sh = holidaysSoon() ? [] : list.filter(isShift2);   // на каникулах блок второй смены не показываем
     var wrap = document.createElement("div");
     if(main.length || !sh.length) wrap.appendChild(slotGrid(main, cellFn));
     if(sh.length){
