@@ -851,13 +851,19 @@
       var byDay = {}, order = [];
       list.forEach(function(s){
         if(!byDay[s.day]){ byDay[s.day] = []; order.push(s.day); }
-        byDay[s.day].push(s.time);
+        byDay[s.day].push(s.time + (s.who === "dasha" ? " (Даша)" : ""));
       });
       return order.map(function(d){ return {day: d, slots: byDay[d].join(", ")}; });
     }
     var sh = SLOTS.filter(isShift2);
     TRIAL = rows(SLOTS.filter(function(s){ return !isShift2(s); }));
     if(sh.length) TRIAL = TRIAL.concat([{day:SHIFT2_LABEL, slots:"", head:true}], rows(sh));
+  }
+  // индивидуальные и пары записываем в окна «Свободно (Даша)», группы - в обычные «Свободно для пробного»
+  function dashaPool(){ return isInd() && !inIndGroup(); }
+  function poolSlots(){
+    var d = dashaPool();
+    return SLOTS.filter(function(s){ return (s.who === "dasha") === d; });
   }
   // окна для второй смены: будни, начало до 13:00
   var SHIFT2_BEFORE = "13:00";
@@ -911,7 +917,8 @@
     if(editContact === b.id) editContact = null;
     // окно снова свободно - возвращаем его в список, не дожидаясь календаря
     if(!slotById(b.id)){
-      SLOTS.push({id:b.id, day:b.day, dayFull:b.dayFull, dayPlain:b.dayPlain, time:b.time, meet:b.meet});
+      SLOTS.push({id:b.id, day:b.day, dayFull:b.dayFull, dayPlain:b.dayPlain, time:b.time, meet:b.meet,
+                  who: String(b.klass || "").indexOf(IND_MARK.trim()) >= 0 ? "dasha" : ""});
       SLOTS.sort(function(x, y){ return x.id < y.id ? -1 : 1; });
     }
     delete snapSlots[b.id];
@@ -2437,6 +2444,7 @@
   NODES.indGroupPrice = {
     ind:true,
     indGroup:true,
+    freshSlots:true,
     slots:true,
     usesClass:true,
     status:"ответил",
@@ -2450,6 +2458,7 @@
   NODES.indGroupTime = {
     ind:true,
     indGroup:true,
+    freshSlots:true,
     slots:true,
     usesClass:true,
     status:"ответил",
@@ -2608,11 +2617,13 @@
 
   NODES.chemTime = {
     chem:true,
+    ind:true,
+    freshSlots:true,
     slots:true,
     status:"ответил",
     stage:"Химия · возражение",
     title:"Не подходит время группы",
-    hint:"Предлагаем пару или индивидуально - там время подбирается отдельно. Перед отправкой спросите Артура, есть ли место.",
+    hint:"Предлагаем пару или индивидуально - там время подбирается отдельно. Окна здесь - Даши. Перед отправкой спросите Артура, есть ли место.",
     msgs:["Понял. Тогда удобнее пара или индивидуально - время подбираем отдельно, не по расписанию группы.\n\nВ паре - " + PAIR.price + " рублей за занятие с каждого ученика.\nИндивидуально - " + IND.price + " рублей за занятие.\n\nНачнём с диагностики - посмотрю уровень и подберём время.\n\nУдобно {{день1}} в {{время1}} или {{день2}} в {{время2}}?"],
     note:"Если мест на пары и индивидуальные нет - не отправляйте этот текст, а спросите удобное время и запишите в лист ожидания группы (как в «Не подходит время» групповой ветки).",
     next:[
@@ -2756,8 +2767,9 @@
       sl.className = "branch-label slot-head";
       var slText = document.createElement("span");
       var nUsed = usedCount();
-      slText.textContent = (picked.length ? "Окна для пробного - в тексте " + picked.length + " из 2"
-                                          : "Окна для пробного - нажмите два варианта")
+      var poolName = dashaPool() ? "Окна Даши для пробного" : "Окна для пробного";
+      slText.textContent = (picked.length ? poolName + " - в тексте " + picked.length + " из 2"
+                                          : poolName + " - нажмите два варианта")
                          + (nUsed ? " · уже предлагали: " + nUsed : "");
       sl.appendChild(slText);
       if(nUsed){
@@ -2771,8 +2783,16 @@
       }
       sw.appendChild(sl);
 
-      if(n.shift2Only){
-        var day2 = SLOTS.filter(isShift2);
+      var pool = poolSlots();
+      if(!pool.length){
+        var e0 = document.createElement("div");
+        e0.className = "slot-empty";
+        e0.textContent = dashaPool()
+          ? "Свободных окон Даши нет - поставьте в календарь события «Свободно (Даша)» или спросите Артура"
+          : "Свободных окон нет - поставьте их в календарь или спросите Артура";
+        sw.appendChild(e0);
+      } else if(n.shift2Only){
+        var day2 = pool.filter(isShift2);
         if(day2.length) sw.appendChild(slotGrid(day2, slotCell));
         else {
           var e2 = document.createElement("div");
@@ -2780,7 +2800,7 @@
           e2.textContent = "Дневных окон нет - поставьте в календарь окна в будни до " + SHIFT2_BEFORE + " или спросите Артура";
           sw.appendChild(e2);
         }
-      } else sw.appendChild(slotGridSplit(SLOTS, slotCell));
+      } else sw.appendChild(slotGridSplit(pool, slotCell));
 
       var hint2 = document.createElement("div");
       hint2.className = "slot-hint";
@@ -2801,7 +2821,7 @@
                             : "Какое окно выбрал родитель";
       cw.appendChild(cl);
       var offered = picked.map(slotById).filter(Boolean);
-      cw.appendChild(slotGridSplit(offered.length ? offered : SLOTS, confirmCell));
+      cw.appendChild(slotGridSplit(offered.length ? offered : poolSlots(), confirmCell));
       var cHint = document.createElement("div");
       cHint.className = "slot-hint";
       cHint.textContent = offered.length
@@ -3151,7 +3171,8 @@
           dayFull: dayPhrase(full),
           dayPlain: full,
           time: time,
-          meet: meet
+          meet: meet,
+          who: /даш/i.test(String(e.summary || "")) ? "dasha" : ""
         });
       });
       trialFromSlots();
