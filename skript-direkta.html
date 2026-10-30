@@ -902,9 +902,24 @@
   // окна для второй смены: будни, начало до 13:00
   var SHIFT2_BEFORE = "13:00";
   var SHIFT2_LABEL = "Для второй смены";
+  // каникулы: в школе никто не учится - окна второй смены не выделяем, ветку «вторая смена» не показываем
+  var HOLIDAYS = [["2026-10-31", "2026-11-08"]];
+  function inHolidays(d){
+    var k = d.toLocaleDateString("en-CA", {timeZone:TZ});
+    return HOLIDAYS.some(function(h){ return k >= h[0] && k <= h[1]; });
+  }
+  // ветку «вторая смена» прячем за неделю до каникул и до их конца: пробные в это время всё равно на каникулах
+  function holidaysSoon(){
+    var k = new Date().toLocaleDateString("en-CA", {timeZone:TZ});
+    return HOLIDAYS.some(function(h){
+      var from = new Date(Date.parse(h[0]) - 7 * 864e5).toISOString().slice(0, 10);
+      return k >= from && k <= h[1];
+    });
+  }
   function isShift2(s){
     var d = new Date(s.id);
     if(isNaN(d.getTime())) return false;
+    if(inHolidays(d)) return false;
     var wd = d.toLocaleDateString("en-US", {weekday:"short", timeZone:TZ});
     return wd !== "Sat" && wd !== "Sun" && String(s.time) < SHIFT2_BEFORE;
   }
@@ -2313,6 +2328,7 @@
     return indCard;
   }
   function route(o){
+    if((o.to === "indShift2" || o.to === "chemShift2") && holidaysSoon()) return null;
     if(o.to === "start" || o.group) return o.to;
     if(isInd()){
       if(IND_HIDE[o.to]) return null;
