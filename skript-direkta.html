@@ -292,6 +292,9 @@
   .slot-teacher{margin-top:14px;padding-top:10px;border-top:1px solid var(--line);font-size:14px;font-weight:600;color:var(--ink)}
   .slot-teacher:first-child{margin-top:4px;padding-top:0;border-top:0}
   .slot-teacher span{font-weight:400;color:var(--muted)}
+  .slot-teacher.tgl{cursor:pointer;user-select:none}
+  .slot-teacher.tgl:hover .tgl-btn{text-decoration:underline}
+  .slot-teacher .tgl-btn{color:var(--accent);font-weight:500}
   .slot-sub b{color:var(--ink);font-weight:600}
   .panel p{margin:0;font-size:14px;color:var(--muted)}
   .panel ul{margin:0;padding-left:18px;font-size:14px;display:grid;gap:5px}
@@ -870,6 +873,8 @@
   // индивидуальные и пары записываем в окна «Свободно (Даша)», группы - в обычные «Свободно для пробного»
   function dashaPool(){ return isInd() && !inIndGroup(); }
   function slotTeacher(s){ return s && s.who === "dasha" ? "Даша" : "Артур"; }
+  // когда первыми идут окна Даши, окна Артура свёрнуты - раскрываются по нажатию на заголовок
+  var artOpen = false;
   // окна разбиты на Артура и Дашу; первым идёт тот, кого обычно ставим в этой ветке, но выбрать можно любое
   function slotsByTeacher(list, cellFn, shift2Only){
     var wrap = document.createElement("div");
@@ -885,7 +890,19 @@
         hs.textContent = " · в первую очередь";
         h.appendChild(hs);
       }
+      var foldable = who === "" && idx === 1;
+      var hasPick = sub.some(function(s){ return picked.indexOf(s.id) >= 0 || confirmedId === s.id; });
+      var folded = foldable && !artOpen && !hasPick;
+      if(foldable && !hasPick){
+        h.className += " tgl";
+        var tb = document.createElement("span");
+        tb.className = "tgl-btn";
+        tb.textContent = folded ? " · показать" + (sub.length ? " (" + sub.length + ")" : "") : " · свернуть";
+        h.appendChild(tb);
+        h.addEventListener("click", function(){ artOpen = !artOpen; render(); });
+      }
       wrap.appendChild(h);
+      if(folded) return;
       if(!sub.length){
         var e = document.createElement("div");
         e.className = "slot-empty";
@@ -1591,6 +1608,7 @@
     cancelFrom = null;
     indCard = false;
     chemCard = false;
+    artOpen = false;
   }
 
   // ——— ответ после отмены пробного ———
