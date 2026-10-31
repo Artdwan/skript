@@ -872,6 +872,8 @@
   }
   // индивидуальные и пары записываем в окна «Свободно (Даша)», группы - в обычные «Свободно для пробного»
   function dashaPool(){ return isInd() && !inIndGroup(); }
+  // постоянная ссылка Google Meet Дарьи Владимировны - для её окон, если у события в календаре нет своей встречи
+  var DASHA_MEET = "https://meet.google.com/zgj-tsxv-tmn";
   function slotTeacher(s){ return s && s.who === "dasha" ? "Даша" : "Артур"; }
   // когда первыми идут окна Даши, окна Артура свёрнуты - раскрываются по нажатию на заголовок
   var artOpen = false;
@@ -961,7 +963,7 @@
       time: time,
       insta: insta,
       klass: parts.join(" "),
-      meet: meet
+      meet: meet || (/даш/i.test(title) ? DASHA_MEET : "")
     };
   }
   var pendingCancel = null;
@@ -3202,7 +3204,7 @@
           dayFull: dayPhrase(full),
           dayPlain: full,
           time: time,
-          meet: meet,
+          meet: meet || (/даш/i.test(String(e.summary || "")) ? DASHA_MEET : ""),
           who: /даш/i.test(String(e.summary || "")) ? "dasha" : ""
         });
       });
